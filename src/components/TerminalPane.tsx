@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { Copy, ClipboardPaste } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import {
   isTauri,
@@ -340,9 +341,47 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       } catch (e) {}
     }, [fontSize]);
 
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+    useEffect(() => {
+      const handleCloseMenu = () => setContextMenu(null);
+      window.addEventListener('click', handleCloseMenu);
+      return () => window.removeEventListener('click', handleCloseMenu);
+    }, []);
+
+    const handleCopy = () => {
+      const selection = xtermInstance.current?.getSelection();
+      if (selection) {
+        navigator.clipboard.writeText(selection);
+      }
+      setContextMenu(null);
+    };
+
+    const handlePaste = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          writeTerminalPTY(id, text);
+          if (typeof window !== 'undefined' && (window as any).electronAPI?.terminalWrite) {
+            (window as any).electronAPI.terminalWrite(id, text);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to paste:', err);
+      }
+      setContextMenu(null);
+      xtermInstance.current?.focus();
+    };
+
     return (
       <div
+        data-terminal-area="true"
         onClick={() => xtermInstance.current?.focus()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setContextMenu({ x: e.clientX, y: e.clientY });
+        }}
         onDragOver={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -364,8 +403,45 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
         }}
         ref={terminalRef}
         style={{ backgroundColor: 'var(--aura-dock-bg, #181818)' }}
-        className="h-full w-full p-1.5 overflow-hidden cursor-text"
-      />
+        className="h-full w-full p-1.5 overflow-hidden cursor-text relative"
+      >
+        {contextMenu && (
+          <div
+            style={{
+              top: `${contextMenu.y}px`,
+              left: `${contextMenu.x}px`,
+              backgroundColor: 'var(--aura-card-bg, #252526)',
+              borderColor: 'var(--aura-border, #454545)',
+              color: 'var(--aura-text, #cccccc)',
+            }}
+            className="fixed z-50 w-44 border rounded-lg shadow-2xl py-1 text-xs select-none animate-in fade-in duration-75 divide-y divide-[var(--aura-border,#333333)] font-sans"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="py-0.5">
+              <div
+                onClick={handleCopy}
+                className="flex items-center justify-between px-3 py-1.5 hover:bg-[#007acc]/20 hover:text-[#007acc] cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Copy size={13} />
+                  <span>复制 (Copy)</span>
+                </div>
+                <span className="text-[10px] text-[var(--aura-text-muted)] font-mono">⌘C</span>
+              </div>
+              <div
+                onClick={handlePaste}
+                className="flex items-center justify-between px-3 py-1.5 hover:bg-[#007acc]/20 hover:text-[#007acc] cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <ClipboardPaste size={13} />
+                  <span>粘贴 (Paste)</span>
+                </div>
+                <span className="text-[10px] text-[var(--aura-text-muted)] font-mono">⌘V</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     );
   },
   (prevProps, nextProps) => {

@@ -341,9 +341,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement !== document.getElementById('sidebar-container')) return;
-      if (inlineCreateParent || actionModal || inlineRenameItem) return;
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      const sidebarContainer = document.getElementById('sidebar-container');
+      const isSidebarFocused = document.activeElement === sidebarContainer || sidebarContainer?.contains(document.activeElement);
+      if (!isSidebarFocused && !contextMenu) return;
+      if (inlineCreateParent || actionModal || inlineRenameItem) return;
+
+      if (contextMenu) {
+        setContextMenu(null);
+      }
 
       const visible = getVisibleItems();
       if (visible.length === 0) return;
@@ -386,7 +393,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedItem, inlineCreateParent, actionModal, inlineRenameItem, openFolders, folderChildren, files, workspaceDir]);
+  }, [contextMenu, selectedItem, inlineCreateParent, actionModal, inlineRenameItem, openFolders, folderChildren, files, workspaceDir]);
 
   useEffect(() => {
     if (inlineCreateParent && inlineInputRef.current) {

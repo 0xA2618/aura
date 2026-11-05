@@ -1259,6 +1259,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                     folding: true,
                     wordWrap: 'on',
                     originalEditable: false,
+                    contextmenu: false,
                   }}
                 />
               </div>
@@ -1295,6 +1296,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                       invisibleCharacters: false,
                       nonBasicASCII: false,
                     },
+                    contextmenu: false,
                   }}
                 />
               </div>
