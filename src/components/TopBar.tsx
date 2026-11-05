@@ -1,0 +1,121 @@
+import React from 'react';
+import { Settings, Bot, Terminal } from 'lucide-react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isTauri, startWindowDragging } from '../services/fileService';
+
+interface TopBarProps {
+  activeView: 'files' | 'git' | 'plugins';
+  workspaceDir: string;
+  isBottomOpen: boolean;
+  onChangeView: (view: 'files' | 'git' | 'plugins') => void;
+  onOpenOpenCode: () => void;
+  onToggleBottom: () => void;
+  onOpenSettings: () => void;
+}
+
+export const TopBar: React.FC<TopBarProps> = ({
+  activeView,
+  workspaceDir,
+  isBottomOpen,
+  onChangeView,
+  onOpenOpenCode,
+  onToggleBottom,
+  onOpenSettings,
+}) => {
+  const handleDragMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0 && isTauri) {
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('[data-tauri-no-drag]')) {
+        return;
+      }
+      startWindowDragging();
+    }
+  };
+
+  const handleDoubleClick = async (e: React.MouseEvent) => {
+    if (isTauri) {
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('[data-tauri-no-drag]')) {
+        return;
+      }
+      try {
+        const win = getCurrentWindow();
+        const isMax = await win.isMaximized();
+        if (isMax) {
+          await win.unmaximize();
+        } else {
+          await win.maximize();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  return (
+    <div
+      data-tauri-drag-region
+      onMouseDown={handleDragMouseDown}
+      onDoubleClick={handleDoubleClick}
+      style={{ backgroundColor: 'var(--aura-topbar-bg)', borderColor: 'var(--aura-border)' }}
+      className="h-9 w-full border-b flex items-center justify-between select-none px-2 z-20 cursor-default"
+    >
+      {/* 80px safe area for macOS native traffic light buttons with subtle inactive contrast ring */}
+      <div data-tauri-drag-region className="flex items-center">
+        <div data-tauri-drag-region className="w-20 h-full flex-shrink-0 relative">
+          <div className="absolute inset-y-1.5 left-2 w-16 rounded-full bg-black/5 dark:bg-white/5 pointer-events-none -z-10" />
+        </div>
+      </div>
+
+      {/* Center: Current Workspace Directory */}
+      <div data-tauri-drag-region className="flex-1 flex items-center justify-center px-4 overflow-hidden h-full">
+        {workspaceDir ? (
+          <span
+            data-tauri-drag-region
+            className="text-xs font-mono text-[var(--aura-text-muted,#888888)] truncate cursor-default select-none"
+            title={workspaceDir}
+          >
+            {workspaceDir}
+          </span>
+        ) : (
+          <span data-tauri-drag-region className="text-xs font-mono text-[var(--aura-text-muted,#555555)] cursor-default select-none">Aura IDE</span>
+        )}
+      </div>
+
+      {/* Right side: Global Actions (Robot -> OpenCode, Terminal -> Toggle Dock, Settings) */}
+      <div data-tauri-no-drag className="flex items-center gap-1">
+        <button
+          data-tauri-no-drag
+          onClick={onOpenOpenCode}
+          title="在3号窗口打开 OpenCode 对话 (Shift+⌘+M)"
+          className="p-1.5 rounded text-[var(--aura-text-muted)] hover:text-[#007acc] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+        >
+          <Bot size={16} />
+        </button>
+
+        <button
+          data-tauri-no-drag
+          onClick={onToggleBottom}
+          title={isBottomOpen ? '隐藏下方 AI/终端 (Space + oc)' : '展开下方 AI/终端 (Space + oc)'}
+          style={{
+            backgroundColor: isBottomOpen ? 'rgba(0, 122, 204, 0.12)' : 'transparent',
+            borderColor: isBottomOpen ? 'var(--aura-accent, #007acc)' : 'transparent',
+            color: isBottomOpen ? '#007acc' : 'var(--aura-text-muted)'
+          }}
+          className="p-1.5 rounded border transition-colors hover:text-[#007acc] hover:bg-black/5 dark:hover:bg-white/10"
+        >
+          <Terminal size={16} />
+        </button>
+
+        <button
+          data-tauri-no-drag
+          onClick={onOpenSettings}
+          title="首选项与设置 (⌘, / Settings)"
+          className="p-1.5 rounded text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+        >
+          <Settings size={16} />
+        </button>
+      </div>
+    </div>
+  );
+};

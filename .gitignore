@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Production & build outputs
+dist
+dist-electron
+target
+release
+*.dmg
+*.app
+*.exe
+*.msi
+*.deb
+*.rpm
+*.AppImage
+
+# Logs & temp
+*.log
+.DS_Store
+*.tmp
+
+# OpenCode & Local AI sessions
+.omo/
+.opencode/
+
+# Vite & TypeScript
+*.tsbuildinfo
+
+# Local task tracking & private notes
+docs/todoList.md
+
+# Local AI Configurations & Prompts
+AGENTS.md
+opencode.json
+.opencode.json
+
+# Environment variables & local secrets
+.env
+.env.local
+.env.*.local
+
+# IDE & Editor folders
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
