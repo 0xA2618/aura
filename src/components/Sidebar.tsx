@@ -593,7 +593,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const changedCount = gitStatusData.totalChanged > 0
     ? gitStatusData.totalChanged
-    : files.filter((f) => f.gitStatus).length;
+    : files.filter((f) => f.gitStatus && f.gitStatus !== 'IGNORED').length;
 
   const navTabs = [
     { id: 'files' as const, icon: Files, title: '文件资源 (Files)' },
@@ -1112,7 +1112,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {(() => {
                   const changedFiles = gitStatusData.files.length > 0
                     ? gitStatusData.files
-                    : files.filter(f => f.gitStatus);
+                    : files.filter(f => f.gitStatus && f.gitStatus !== 'IGNORED');
                   if (changedFiles.length === 0) {
                     return (
                       <div className="py-12 text-center text-xs text-[var(--aura-text-muted)] flex flex-col items-center gap-2">
