@@ -505,12 +505,19 @@ fn terminal_create(
         })
         .map_err(|e| e.to_string())?;
 
-    let default_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let default_shell = std::env::var("SHELL").unwrap_or_else(|_| {
+        if cfg!(windows) {
+            "powershell.exe".to_string()
+        } else {
+            "/bin/zsh".to_string()
+        }
+    });
     let mut cmd = CommandBuilder::new(&default_shell);
 
     let resolved_cwd = match cwd {
         Some(ref p) if Path::new(p).exists() => PathBuf::from(p),
-        _ => std::env::var("HOME")
+        _ => std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
             .map(PathBuf::from)
             .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default()),
     };
@@ -528,6 +535,7 @@ fn terminal_create(
     let is_opencode = mode.as_deref() == Some("opencode");
     if is_opencode {
         let opencode_path = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
             .map(|h| format!("{}/.opencode/bin/opencode", h))
             .unwrap_or_default();
         let bin = if Path::new(&opencode_path).exists() {
@@ -535,10 +543,15 @@ fn terminal_create(
         } else {
             "opencode".to_string()
         };
-        cmd.arg("-l");
-        cmd.arg("-c");
-        cmd.arg(format!("cd '{}' && exec {}", resolved_cwd.to_string_lossy(), bin));
-    } else {
+        if cfg!(windows) {
+            cmd.arg("-Command");
+            cmd.arg(format!("Set-Location '{}'; & '{}'", resolved_cwd.to_string_lossy(), bin));
+        } else {
+            cmd.arg("-l");
+            cmd.arg("-c");
+            cmd.arg(format!("cd '{}' && exec {}", resolved_cwd.to_string_lossy(), bin));
+        }
+    } else if !cfg!(windows) {
         cmd.arg("-l");
     }
 
