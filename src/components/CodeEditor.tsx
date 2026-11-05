@@ -1050,7 +1050,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           ) : activeTab.viewMode === 'markdown-preview' ? (
             <div className="h-full w-full flex bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg)] overflow-hidden relative">
               <div className="flex-1 h-full overflow-y-auto px-8 py-6 select-text no-scrollbar">
-                <div className="w-full max-w-4xl space-y-4">
+                <div className="w-full space-y-4">
                   <MarkdownPreviewEnhanced
                     content={activeTab.content}
                     currentFilePath={activeTab.path}
