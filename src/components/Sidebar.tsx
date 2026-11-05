@@ -313,8 +313,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
       }
     };
+    const handleFsChangedEvent = async () => {
+      const paths = Object.keys(openFolders).filter((p) => openFolders[p]);
+      if (paths.length > 0) {
+        const updates: Record<string, FileItem[]> = {};
+        await Promise.all(
+          paths.map(async (folderPath) => {
+            const children = await fetchDirectory(folderPath);
+            updates[folderPath] = children;
+          })
+        );
+        setFolderChildren((prev) => ({ ...prev, ...updates }));
+      }
+    };
     window.addEventListener('aura:focus-sidebar', handleFocusSidebarEvent);
-    return () => window.removeEventListener('aura:focus-sidebar', handleFocusSidebarEvent);
+    window.addEventListener('aura:fs-changed', handleFsChangedEvent);
+    return () => {
+      window.removeEventListener('aura:focus-sidebar', handleFocusSidebarEvent);
+      window.removeEventListener('aura:fs-changed', handleFsChangedEvent);
+    };
   }, [files, openFolders, folderChildren]);
 
   useEffect(() => {

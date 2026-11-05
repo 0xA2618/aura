@@ -4,9 +4,11 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::process::Command;
+use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use notify::{Watcher, RecursiveMode, Event, EventKind};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileEntry {
@@ -37,12 +39,14 @@ struct TerminalSession {
 
 pub struct AppState {
     terminals: Arc<Mutex<HashMap<String, TerminalSession>>>,
+    active_watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            active_watcher: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -261,6 +265,50 @@ fn fs_pick_workspace() -> Result<Option<String>, String> {
     {
         Ok(None)
     }
+}
+
+#[tauri::command]
+fn fs_watch_workspace(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    workspace_path: String,
+) -> Result<bool, String> {
+    let mut watcher_lock = state.active_watcher.lock().map_err(|e| e.to_string())?;
+    *watcher_lock = None;
+
+    let target_path = PathBuf::from(&workspace_path);
+    if !target_path.exists() {
+        return Ok(false);
+    }
+
+    let last_emit = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10)));
+    let app_handle = app.clone();
+
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+        if let Ok(event) = res {
+            match event.kind {
+                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                    let should_ignore = event.paths.iter().any(|p| {
+                        let s = p.to_string_lossy();
+                        s.contains("/.git/") || s.contains("/node_modules/") || s.contains("/target/") || s.contains("/.pnpm-store/")
+                    });
+                    if !should_ignore {
+                        let mut last = last_emit.lock().unwrap();
+                        if last.elapsed() >= Duration::from_millis(300) {
+                            *last = Instant::now();
+                            let _ = app_handle.emit("aura:fs-changed", ());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }).map_err(|e| e.to_string())?;
+
+    watcher.watch(&target_path, RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+    *watcher_lock = Some(watcher);
+
+    Ok(true)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -757,6 +805,7 @@ pub fn run() {
             fs_delete_entry,
             fs_open_in_finder,
             fs_pick_workspace,
+            fs_watch_workspace,
             git_get_status,
             git_get_commits,
             git_get_commit_files,

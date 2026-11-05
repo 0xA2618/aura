@@ -359,6 +359,18 @@ export async function promptOpenDirectory(currentPath?: string): Promise<string 
   return null;
 }
 
+export async function watchWorkspaceFS(workspacePath: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('fs_watch_workspace', { workspacePath });
+    } catch (e) {
+      console.error('[Rust fs_watch_workspace error]', e);
+      return false;
+    }
+  }
+  return false;
+}
+
 export async function createFileSystemEntry(targetPath: string, isDirectory: boolean): Promise<boolean> {
   if (isTauri) {
     try {

@@ -27,6 +27,7 @@ import {
   killTerminalPTY,
   writeTerminalPTY,
   fetchCommitFileDiff,
+  watchWorkspaceFS,
   isTauri,
   exitApp,
 } from './services/fileService';
@@ -456,6 +457,9 @@ export function App() {
       workspaceDirRef.current = dir;
       localStorage.setItem('aura:workspaceDir', dir);
     }
+    if (targetDir) {
+      watchWorkspaceFS(targetDir);
+    }
     const fileList = await fetchDirectory(targetDir || undefined);
     setFiles(fileList);
     const commitList = await fetchGitCommits(targetDir || undefined);
@@ -508,6 +512,7 @@ export function App() {
     let unlistenMenuQuit: (() => void) | undefined;
     let unlistenMenuHelp: (() => void) | undefined;
     let unlistenMenuOpenFolder: (() => void) | undefined;
+    let unlistenFsChanged: (() => void) | undefined;
     if (isTauri) {
       import('@tauri-apps/api/event').then(({ listen }) => {
         listen('menu:quit_requested', () => {
@@ -527,6 +532,13 @@ export function App() {
         }).then((unlisten) => {
           unlistenMenuHelp = unlisten;
         });
+
+        listen('aura:fs-changed', () => {
+          loadWorkspace();
+          window.dispatchEvent(new CustomEvent('aura:fs-changed'));
+        }).then((unlisten) => {
+          unlistenFsChanged = unlisten;
+        });
       });
     }
 
@@ -539,6 +551,7 @@ export function App() {
       if (unlistenMenuQuit) unlistenMenuQuit();
       if (unlistenMenuHelp) unlistenMenuHelp();
       if (unlistenMenuOpenFolder) unlistenMenuOpenFolder();
+      if (unlistenFsChanged) unlistenFsChanged();
     };
   }, []);
 
