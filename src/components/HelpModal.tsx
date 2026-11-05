@@ -31,6 +31,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
     {
       title: '窗口与全局 (Window & System)',
       items: [
+        { key: '⌘ + B', desc: '显示 / 隐藏左侧 1 号目录树侧边栏 (Toggle Sidebar)' },
         { key: '⌘ + qq', desc: '安全退出应用 (连按 2 次 q 退出)' },
         { key: '⌘ + W', desc: '关闭当前激活标签页 / 终端分屏 (不退出应用)' },
         { key: '⌘ + = / +', desc: '放大编辑器字体 (Font Size +)' },

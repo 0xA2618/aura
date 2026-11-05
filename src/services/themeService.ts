@@ -120,47 +120,12 @@ export const THEMES: ThemeDefinition[] = [
   },
 ];
 
-export interface CustomWindowColors {
-  window1Bg?: string; // Sidebar
-  window1Fg?: string;
-  window2Bg?: string; // Monaco Editor
-  window2Fg?: string;
-  window3Bg?: string; // Terminal Dock
-  window3Fg?: string;
-}
-
-export function getCustomWindowColors(): CustomWindowColors {
-  try {
-    const raw = localStorage.getItem('aura:customWindowColors');
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error(e);
-  }
-  return {};
-}
-
-export function saveCustomWindowColors(colors: CustomWindowColors) {
-  try {
-    localStorage.setItem('aura:customWindowColors', JSON.stringify(colors));
-  } catch (e) {
-    console.error(e);
-  }
-}
-
 export function getThemeById(id: string): ThemeDefinition {
   return THEMES.find((t) => t.id === id) || THEMES[0];
 }
 
-export function applyThemeToDocument(theme: ThemeDefinition, customColors?: CustomWindowColors) {
+export function applyThemeToDocument(theme: ThemeDefinition) {
   const root = document.documentElement;
-  const customs = customColors || getCustomWindowColors();
-
-  const w1Bg = customs.window1Bg || theme.ui.sidebarBg;
-  const w1Fg = customs.window1Fg || theme.ui.text;
-  const w2Bg = customs.window2Bg || theme.ui.editorBg;
-  const w2Fg = customs.window2Fg || theme.ui.text;
-  const w3Bg = customs.window3Bg || theme.ui.dockBg;
-  const w3Fg = customs.window3Fg || theme.ui.text;
 
   const isLight = theme.type === 'light';
   if (isLight) {
@@ -176,17 +141,19 @@ export function applyThemeToDocument(theme: ThemeDefinition, customColors?: Cust
   const dockHeaderBg = isLight ? '#f1f5f9' : '#252526';
   const sidebarHeaderBg = isLight ? '#eef2f7' : '#1f1f20';
   const sidebarToolbarBg = isLight ? '#f1f5f9' : '#252526';
+  const editorTabBg = isLight ? '#f1f5f9' : '#252526';
 
   root.style.setProperty('--aura-app-bg', theme.ui.appBg);
-  root.style.setProperty('--aura-sidebar-bg', w1Bg);
-  root.style.setProperty('--aura-sidebar-fg', w1Fg);
+  root.style.setProperty('--aura-sidebar-bg', theme.ui.sidebarBg);
+  root.style.setProperty('--aura-sidebar-fg', theme.ui.text);
   root.style.setProperty('--aura-sidebar-header-bg', sidebarHeaderBg);
   root.style.setProperty('--aura-sidebar-toolbar-bg', sidebarToolbarBg);
   root.style.setProperty('--aura-topbar-bg', theme.ui.topBarBg);
-  root.style.setProperty('--aura-editor-bg', w2Bg);
-  root.style.setProperty('--aura-editor-fg', w2Fg);
-  root.style.setProperty('--aura-dock-bg', w3Bg);
-  root.style.setProperty('--aura-dock-fg', w3Fg);
+  root.style.setProperty('--aura-editor-bg', theme.ui.editorBg);
+  root.style.setProperty('--aura-editor-fg', theme.ui.text);
+  root.style.setProperty('--aura-editor-tab-bg', editorTabBg);
+  root.style.setProperty('--aura-dock-bg', theme.ui.dockBg);
+  root.style.setProperty('--aura-dock-fg', theme.ui.text);
   root.style.setProperty('--aura-dock-header-bg', dockHeaderBg);
   root.style.setProperty('--aura-card-bg', cardBg);
   root.style.setProperty('--aura-input-bg', inputBg);

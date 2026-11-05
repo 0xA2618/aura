@@ -31,7 +31,7 @@ import {
   isTauri,
   exitApp,
 } from './services/fileService';
-import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check } from 'lucide-react';
+import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check, Move } from 'lucide-react';
 
 import { SupportedLang, getInitialLanguage, translations } from './services/i18n';
 import { getThemeById, applyThemeToDocument } from './services/themeService';
@@ -145,6 +145,8 @@ interface BottomDockProps {
   isBottomOpen: boolean;
   bottomHeight: number;
   isResizing: boolean;
+  resizingType?: 'sidebar' | 'bottom' | 'corner' | null;
+  isCornerHovered?: boolean;
   editingDockTabId: string | null;
   editingDockTabTitle: string;
   dockRenameInputRef: any;
@@ -172,6 +174,8 @@ const BottomDockArea = React.memo<BottomDockProps>(({
   isBottomOpen,
   bottomHeight,
   isResizing,
+  resizingType,
+  isCornerHovered,
   editingDockTabId,
   editingDockTabTitle,
   dockRenameInputRef,
@@ -195,12 +199,18 @@ const BottomDockArea = React.memo<BottomDockProps>(({
     <>
       <div
         onMouseDown={onMouseDownBottom}
-        className="h-1.5 hover:h-1.5 cursor-row-resize hover:bg-[#007acc]/20 rounded-full transition-colors flex items-center justify-center gap-1 select-none z-20 group relative my-0"
+        className={`h-1.5 hover:h-1.5 cursor-row-resize transition-all flex items-center justify-center gap-1 select-none z-20 group relative my-0 ${
+          resizingType === 'bottom' || resizingType === 'corner'
+            ? 'bg-[#007acc] shadow-sm'
+            : isCornerHovered
+            ? 'bg-[#007acc]/35 shadow-xs'
+            : 'hover:bg-[#007acc]/20 rounded-full'
+        }`}
         title="按住鼠标上下拖动调整高度"
       >
-        <div className="w-0.5 h-0.5 rounded-full bg-gray-500/50 group-hover:bg-[#007acc] transition-colors" />
-        <div className="w-0.5 h-0.5 rounded-full bg-gray-500/50 group-hover:bg-[#007acc] transition-colors" />
-        <div className="w-0.5 h-0.5 rounded-full bg-gray-500/50 group-hover:bg-[#007acc] transition-colors" />
+        <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'bottom' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
+        <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'bottom' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
+        <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'bottom' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
       </div>
 
       <div
@@ -408,7 +418,10 @@ export function App() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editorFontSize, setEditorFontSize] = useState<number>(() => {
-    return Number(localStorage.getItem('aura:fontSize') || '13');
+    return Number(localStorage.getItem('aura:fontSize') || '14');
+  });
+  const [sidebarFontSize, setSidebarFontSize] = useState<number>(() => {
+    return Number(localStorage.getItem('aura:sidebarFontSize') || '14');
   });
   const [terminalFontSize, setTerminalFontSize] = useState<number>(() => {
     return Number(localStorage.getItem('aura:terminalFontSize') || '13.5');
@@ -434,15 +447,22 @@ export function App() {
     const saved = localStorage.getItem('aura:bottomHeight');
     return saved ? Number(saved) : 460;
   });
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
+    const saved = localStorage.getItem('aura:isSidebarOpen');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const lastOpenedSidebarWidth = useRef<number>(260);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem('aura:sidebarWidth');
-    return saved ? Number(saved) : 260;
+    const val = saved ? Number(saved) : 260;
+    return val >= 180 ? val : 260;
   });
   const isDraggingSidebar = useRef(false);
   const isDraggingBottom = useRef(false);
 
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -480,6 +500,7 @@ export function App() {
   };
 
   useEffect(() => {
+    localStorage.removeItem('aura:customWindowColors');
     const currentTheme = getThemeById(themeId);
     applyThemeToDocument(currentTheme);
   }, [themeId]);
@@ -663,6 +684,13 @@ export function App() {
             return next;
           });
         }
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToggleSidebar();
         return;
       }
 
@@ -1264,6 +1292,19 @@ export function App() {
     showToast('插件安装成功 (Extension Installed)');
   };
 
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('aura:isSidebarOpen', String(next));
+      if (next && sidebarWidth < 180) {
+        const restored = lastOpenedSidebarWidth.current >= 180 ? lastOpenedSidebarWidth.current : 260;
+        setSidebarWidth(restored);
+        localStorage.setItem('aura:sidebarWidth', String(restored));
+      }
+      return next;
+    });
+  };
+
   const handleUninstallPlugin = (id: string) => {
     setPlugins((prev) => {
       const next = prev.map((p) =>
@@ -1275,31 +1316,56 @@ export function App() {
     showToast('插件已卸载 (Extension Uninstalled)');
   };
 
-  const [isResizing, setIsResizing] = useState(false);
+  const [resizingType, setResizingType] = useState<'sidebar' | 'bottom' | 'corner' | null>(null);
+  const isResizing = resizingType !== null;
 
   const handleMouseDownSidebar = (e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingSidebar.current = true;
-    setIsResizing(true);
+    setResizingType('sidebar');
     const startX = e.clientX;
-    const startWidth = sidebarWidth;
+    const initialOpen = isSidebarOpen;
+    const startWidth = initialOpen ? sidebarWidth : 0;
 
     let animFrame: number | null = null;
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!isDraggingSidebar.current) return;
       if (animFrame) cancelAnimationFrame(animFrame);
       animFrame = requestAnimationFrame(() => {
-        const newWidth = Math.max(180, Math.min(600, startWidth + (moveEvent.clientX - startX)));
-        setSidebarWidth(newWidth);
+        const deltaX = moveEvent.clientX - startX;
+        if (!initialOpen) {
+          if (deltaX > 20) {
+            setIsSidebarOpen(true);
+            const targetWidth = Math.max(180, Math.min(600, deltaX > 80 ? deltaX : (lastOpenedSidebarWidth.current || 260)));
+            setSidebarWidth(targetWidth);
+          }
+        } else {
+          const rawWidth = startWidth + deltaX;
+          if (rawWidth < 120) {
+            setIsSidebarOpen(false);
+          } else {
+            setIsSidebarOpen(true);
+            const clamped = Math.max(180, Math.min(600, rawWidth));
+            lastOpenedSidebarWidth.current = clamped;
+            setSidebarWidth(clamped);
+          }
+        }
       });
     };
 
     const handleMouseUp = () => {
       isDraggingSidebar.current = false;
-      setIsResizing(false);
+      setResizingType(null);
       if (animFrame) cancelAnimationFrame(animFrame);
+      setIsSidebarOpen((latestOpen) => {
+        localStorage.setItem('aura:isSidebarOpen', String(latestOpen));
+        return latestOpen;
+      });
       setSidebarWidth((latest) => {
-        localStorage.setItem('aura:sidebarWidth', String(latest));
+        if (latest >= 180) {
+          localStorage.setItem('aura:sidebarWidth', String(latest));
+          lastOpenedSidebarWidth.current = latest;
+        }
         return latest;
       });
       window.removeEventListener('mousemove', handleMouseMove);
@@ -1313,7 +1379,7 @@ export function App() {
   const handleMouseDownBottom = (e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingBottom.current = true;
-    setIsResizing(true);
+    setResizingType('bottom');
     const startY = e.clientY;
     const startHeight = bottomHeight;
 
@@ -1322,14 +1388,15 @@ export function App() {
       if (!isDraggingBottom.current) return;
       if (animFrame) cancelAnimationFrame(animFrame);
       animFrame = requestAnimationFrame(() => {
-        const newHeight = Math.max(180, Math.min(800, startHeight - (moveEvent.clientY - startY)));
+        const maxHeight = window.innerHeight - 70;
+        const newHeight = Math.max(80, Math.min(maxHeight, startHeight - (moveEvent.clientY - startY)));
         setBottomHeight(newHeight);
       });
     };
 
     const handleMouseUp = () => {
       isDraggingBottom.current = false;
-      setIsResizing(false);
+      setResizingType(null);
       if (animFrame) cancelAnimationFrame(animFrame);
       setBottomHeight((latest) => {
         localStorage.setItem('aura:bottomHeight', String(latest));
@@ -1345,28 +1412,58 @@ export function App() {
 
   const handleMouseDownCorner = (e: React.MouseEvent) => {
     e.preventDefault();
-    setIsResizing(true);
+    setResizingType('corner');
     const startX = e.clientX;
     const startY = e.clientY;
-    const startWidth = sidebarWidth;
+    const initialOpen = isSidebarOpen;
+    const startWidth = initialOpen ? sidebarWidth : 0;
     const startHeight = bottomHeight;
 
     let animFrame: number | null = null;
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (animFrame) cancelAnimationFrame(animFrame);
       animFrame = requestAnimationFrame(() => {
-        const newWidth = Math.max(180, Math.min(600, startWidth + (moveEvent.clientX - startX)));
-        const newHeight = Math.max(180, Math.min(800, startHeight - (moveEvent.clientY - startY)));
-        setSidebarWidth(newWidth);
-        setBottomHeight(newHeight);
+        const deltaX = moveEvent.clientX - startX;
+        const deltaY = moveEvent.clientY - startY;
+
+        if (!initialOpen) {
+          if (deltaX > 20) {
+            setIsSidebarOpen(true);
+            const targetWidth = Math.max(180, Math.min(window.innerWidth - 200, deltaX > 80 ? deltaX : (lastOpenedSidebarWidth.current || 260)));
+            setSidebarWidth(targetWidth);
+          }
+        } else {
+          const rawWidth = startWidth + deltaX;
+          if (rawWidth < 120) {
+            setIsSidebarOpen(false);
+          } else {
+            setIsSidebarOpen(true);
+            const clamped = Math.max(180, Math.min(window.innerWidth - 200, rawWidth));
+            lastOpenedSidebarWidth.current = clamped;
+            setSidebarWidth(clamped);
+          }
+        }
+
+        if (isBottomOpen) {
+          const maxHeight = window.innerHeight - 70;
+          const newHeight = Math.max(80, Math.min(maxHeight, startHeight - deltaY));
+          setBottomHeight(newHeight);
+        }
       });
     };
 
     const handleMouseUp = () => {
-      setIsResizing(false);
+      setResizingType(null);
       if (animFrame) cancelAnimationFrame(animFrame);
+      setIsSidebarOpen((latestOpen) => {
+        localStorage.setItem('aura:isSidebarOpen', String(latestOpen));
+        return latestOpen;
+      });
       setSidebarWidth((latest) => {
-        localStorage.setItem('aura:sidebarWidth', String(latest));
+        if (latest >= 180) {
+          localStorage.setItem('aura:sidebarWidth', String(latest));
+          lastOpenedSidebarWidth.current = latest;
+        }
         return latest;
       });
       setBottomHeight((latest) => {
@@ -1402,13 +1499,15 @@ export function App() {
       <div className={`flex flex-1 p-0.5 gap-0 overflow-hidden ${isResizing ? 'select-none pointer-events-auto' : ''}`}>
         <div
           style={{
-            width: `${sidebarWidth}px`,
+            width: isSidebarOpen ? `${sidebarWidth}px` : '0px',
             backgroundColor: 'var(--aura-sidebar-bg)',
-            color: 'var(--aura-sidebar-fg, var(--aura-text))',
-            borderColor: 'var(--aura-border)'
+            color: 'var(--aura-sidebar-fg)',
+            borderColor: isSidebarOpen ? 'var(--aura-border)' : 'transparent',
+            opacity: isSidebarOpen ? 1 : 0,
+            display: isSidebarOpen ? 'block' : 'none',
           }}
           className={`flex-shrink-0 h-full rounded-md overflow-hidden border shadow-xs ${
-            isResizing ? 'transition-none' : 'transition-[width] duration-75'
+            isResizing ? 'transition-none' : 'transition-[width,opacity] duration-150'
           }`}
         >
           <Sidebar
@@ -1418,6 +1517,7 @@ export function App() {
             activeView={activeView}
             workspaceDir={workspaceDir}
             lang={lang}
+            fontSize={sidebarFontSize}
             onSelectFile={handleSelectFile}
             onTogglePlugin={handleTogglePlugin}
             onInstallPlugin={handleInstallPlugin}
@@ -1427,27 +1527,57 @@ export function App() {
             onChangeWorkspaceDir={handleOpenWorkspaceDialog}
             onOpenDiff={handleOpenCommitDiff}
             onRefreshWorkspace={() => loadWorkspace(workspaceDir)}
+            onCollapseSidebar={handleToggleSidebar}
           />
         </div>
 
         <div
           onMouseDown={handleMouseDownSidebar}
-          className="w-1.5 hover:w-1.5 cursor-col-resize hover:bg-[#007acc]/20 rounded-full transition-colors flex flex-col items-center justify-center gap-1 select-none z-20 group relative py-0.5"
-          title="按住鼠标左右拖动调整宽度"
+          onDoubleClick={handleToggleSidebar}
+          className={`cursor-col-resize transition-all flex flex-col items-center justify-center select-none z-20 group relative py-0.5 ${
+            resizingType === 'sidebar' || resizingType === 'corner'
+              ? 'bg-[#007acc] w-1.5 shadow-sm'
+              : isCornerHovered
+              ? 'bg-[#007acc]/35 w-1.5 shadow-xs'
+              : 'hover:bg-[#007acc]/20 ' + (isSidebarOpen
+                ? 'w-1.5 rounded-full'
+                : 'w-2 bg-black/5 dark:bg-white/5 hover:bg-[#007acc]/30 rounded-r-md border-r border-y border-[var(--aura-border)]')
+          }`}
+          title={
+            isSidebarOpen
+              ? '按住鼠标左右拖动调整宽度 (向左拖动小于目录宽度自动收起，双击收起)'
+              : '1号窗口已收起：向右拖动或双击此处重新展开'
+          }
         >
-          <div className="w-0.5 h-0.5 rounded-full bg-gray-500/50 group-hover:bg-[#007acc] transition-colors" />
-          <div className="w-0.5 h-0.5 rounded-full bg-gray-500/50 group-hover:bg-[#007acc] transition-colors" />
-          <div className="w-0.5 h-0.5 rounded-full bg-gray-500/50 group-hover:bg-[#007acc] transition-colors" />
+          {/* 3 dots shifted slightly above vertical center for ergonomic visual alignment */}
+          <div className="flex flex-col items-center gap-1 -translate-y-12">
+            <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'sidebar' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
+            <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'sidebar' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
+            <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'sidebar' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
+          </div>
         </div>
 
-        <div className="flex-1 flex flex-col h-full gap-0 overflow-hidden">
+        <div className="relative flex-1 flex flex-col h-full gap-0 overflow-hidden">
+          {/* VS Code-style invisible intersection resize area at 1, 2, 3 windows junction */}
+          {isBottomOpen && (
+            <div
+              onMouseDown={handleMouseDownCorner}
+              style={{
+                bottom: `${bottomHeight}px`,
+                transform: 'translate(-50%, 50%)',
+              }}
+              className="absolute left-0 z-30 w-5 h-5 cursor-move pointer-events-auto bg-transparent select-none"
+              title="十字交叉点 (按住拖动可同时调整侧边栏宽度与终端高度)"
+            />
+          )}
+
           <div
             style={{
               backgroundColor: 'var(--aura-editor-bg)',
-              color: 'var(--aura-editor-fg, var(--aura-text))',
+              color: 'var(--aura-editor-fg)',
               borderColor: 'var(--aura-border)'
             }}
-            className="flex-1 overflow-hidden min-h-[160px] rounded-md border shadow-xs"
+            className="flex-1 overflow-hidden min-h-[40px] rounded-md border shadow-xs"
           >
             <CodeEditor
               activeTab={activeTab}
@@ -1482,6 +1612,7 @@ export function App() {
               isBottomOpen={isBottomOpen}
               bottomHeight={bottomHeight}
               isResizing={isResizing}
+              resizingType={resizingType}
               editingDockTabId={editingDockTabId}
               editingDockTabTitle={editingDockTabTitle}
               dockRenameInputRef={dockRenameInputRef}
@@ -1522,8 +1653,10 @@ export function App() {
           applyThemeToDocument(getThemeById(newThemeId));
         }}
         onSaveToast={(msg) => {
-          const updatedSize = Number(localStorage.getItem('aura:fontSize') || '13');
+          const updatedSize = Number(localStorage.getItem('aura:fontSize') || '14');
           setEditorFontSize(updatedSize);
+          const updatedSidebarSize = Number(localStorage.getItem('aura:sidebarFontSize') || '14');
+          setSidebarFontSize(updatedSidebarSize);
           showToast(msg);
         }}
       />

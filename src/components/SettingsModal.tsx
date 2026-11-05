@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sliders, Type, Palette, Keyboard, Folder, Save, Languages, LayoutGrid, FileCode, ListTree, Check } from 'lucide-react';
+import { X, Sliders, Type, Palette, Folder, Save, FileCode, ListTree } from 'lucide-react';
 import { SupportedLang, translations } from '../services/i18n';
-import { THEMES, CustomWindowColors, getCustomWindowColors, saveCustomWindowColors, applyThemeToDocument, getThemeById } from '../services/themeService';
+import { THEMES, applyThemeToDocument, getThemeById } from '../services/themeService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,7 +10,7 @@ interface SettingsModalProps {
   themeId: string;
   onClose: () => void;
   onChangeWorkspace: () => void;
-  onChangeLang: (lang: SupportedLang) => void;
+  onChangeLang?: (lang: SupportedLang) => void;
   onChangeTheme: (themeId: string) => void;
   onSaveToast: (msg: string) => void;
 }
@@ -28,15 +28,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const t = translations[lang];
 
-  const [fontSize, setFontSize] = useState<number>(() => {
-    return Number(localStorage.getItem('aura:fontSize') || '13');
-  });
-  const [fontFamily, setFontFamily] = useState<string>(() => {
-    return localStorage.getItem('aura:fontFamily') || 'JetBrainsMono Nerd Font, Menlo, Monaco';
-  });
   const [theme, setTheme] = useState<string>(themeId || 'vs-dark');
-  const [currentLang, setCurrentLang] = useState<SupportedLang>(lang);
-  const [customColors, setCustomColors] = useState<CustomWindowColors>(getCustomWindowColors);
+  const [sidebarFontSize, setSidebarFontSize] = useState<number>(() => {
+    return Number(localStorage.getItem('aura:sidebarFontSize') || '14');
+  });
   const [defaultMarkdownMode, setDefaultMarkdownMode] = useState<'editor' | 'markdown-preview' | 'markmap' | 'outline'>(() => {
     return (localStorage.getItem('aura:defaultMarkdownMode') as any) || 'editor';
   });
@@ -60,16 +55,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   const handleSave = () => {
-    localStorage.setItem('aura:fontSize', fontSize.toString());
-    localStorage.setItem('aura:fontFamily', fontFamily);
     localStorage.setItem('aura:theme', theme);
-    localStorage.setItem('aura:language', currentLang);
+    localStorage.setItem('aura:sidebarFontSize', sidebarFontSize.toString());
     localStorage.setItem('aura:defaultMarkdownMode', defaultMarkdownMode);
     localStorage.setItem('aura:mpeTocVisible', String(defaultShowToc));
-    saveCustomWindowColors(customColors);
-    applyThemeToDocument(getThemeById(theme), customColors);
+    applyThemeToDocument(getThemeById(theme));
     onChangeTheme(theme);
-    onChangeLang(currentLang);
     onSaveToast(t.settingsSaved);
     onClose();
   };
@@ -86,7 +77,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       >
         <div
           style={{
-            backgroundColor: 'var(--aura-dock-header-bg, #2d2d2d)',
+            backgroundColor: 'var(--aura-topbar-bg, #1f1f1f)',
             borderColor: 'var(--aura-border, #333333)',
           }}
           className="flex items-center justify-between px-4 py-3 border-b select-none"
@@ -104,35 +95,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5 text-xs text-[var(--aura-text)] max-h-[70vh] overflow-y-auto no-scrollbar">
-          {/* Section 1: General & Workspace */}
+          {/* Section 1: Workspace */}
           <div
             style={{
-              backgroundColor: 'var(--aura-sidebar-bg, #1e1e1e)',
+              backgroundColor: 'var(--aura-app-bg, #181818)',
               borderColor: 'var(--aura-border, #333333)',
             }}
             className="p-3.5 rounded-xl border space-y-3"
           >
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--aura-text-muted)]">常规与工作区 (General & Workspace)</div>
-            
-            <div className="space-y-1.5">
-              <label className="flex items-center gap-1.5 font-semibold text-[var(--aura-text)]">
-                <Languages size={14} className="text-[#007acc]" />
-                <span>{t.displayLanguage}</span>
-              </label>
-              <select
-                value={currentLang}
-                onChange={(e) => setCurrentLang(e.target.value as SupportedLang)}
-                style={{
-                  backgroundColor: 'var(--aura-input-bg, #252526)',
-                  borderColor: 'var(--aura-border, #3c3c3c)',
-                  color: 'var(--aura-text, #cccccc)',
-                }}
-                className="w-full border rounded-md px-3 py-1.5 outline-none focus:border-[#007acc] transition-colors"
-              >
-                <option value="zh-CN">简体中文 (Simplified Chinese)</option>
-                <option value="en-US">English (United States)</option>
-              </select>
-            </div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--aura-text-muted)]">工作区 (Workspace)</div>
 
             <div className="space-y-1.5">
               <label className="flex items-center gap-1.5 font-semibold text-[var(--aura-text)]">
@@ -154,7 +125,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   onClick={onChangeWorkspace}
                   style={{
-                    backgroundColor: 'var(--aura-dock-header-bg, #333333)',
+                    backgroundColor: 'var(--aura-card-bg, #333333)',
                     borderColor: 'var(--aura-border, #444444)',
                     color: 'var(--aura-text, #ffffff)',
                   }}
@@ -169,7 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Section 2: Editor & Theme */}
           <div
             style={{
-              backgroundColor: 'var(--aura-sidebar-bg, #1e1e1e)',
+              backgroundColor: 'var(--aura-app-bg, #181818)',
               borderColor: 'var(--aura-border, #333333)',
             }}
             className="p-3.5 rounded-xl border space-y-3"
@@ -203,16 +174,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </select>
             </div>
 
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 font-semibold text-[var(--aura-text)]">
+                  <Type size={14} className="text-amber-400" />
+                  <span>1 号窗口侧边栏字号 (Sidebar Font Size)</span>
+                </label>
+                <span className="font-mono text-xs text-[#007acc] font-bold">{sidebarFontSize}px</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="11"
+                  max="18"
+                  step="0.5"
+                  value={sidebarFontSize}
+                  onChange={(e) => setSidebarFontSize(Number(e.target.value))}
+                  className="flex-1 accent-[#007acc] cursor-pointer"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSidebarFontSize(14)}
+                  className="px-2 py-0.5 text-[11px] rounded border border-[var(--aura-border)] text-[var(--aura-text-muted)] hover:text-white transition-colors cursor-pointer"
+                >
+                  重置 14px
+                </button>
+              </div>
+            </div>
+
             <div
               style={{
-                backgroundColor: 'var(--aura-dock-header-bg, #252526)',
+                backgroundColor: 'var(--aura-card-bg, #252526)',
                 borderColor: 'var(--aura-border, #333333)',
               }}
               className="flex items-center justify-between p-2.5 rounded-lg border text-[11px] text-[var(--aura-text-muted)]"
             >
-              <div className="flex items-center gap-1.5">
-                <Type size={13} className="text-blue-400" />
-                <span>字号调节快捷键</span>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-[var(--aura-text)] font-semibold">
+                  <Type size={13} className="text-[#007acc]" />
+                  <span>2、3 号窗口字号调节快捷键</span>
+                </div>
+                <div className="text-[11px] text-[var(--aura-text-muted)]">
+                  2 号编辑器与 3 号终端默认 14px，支持按键随时全局无级缩放
+                </div>
               </div>
               <div className="flex items-center gap-2 font-mono">
                 <span
@@ -240,7 +244,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Section 3: Markdown & Outline Preferences */}
           <div
             style={{
-              backgroundColor: 'var(--aura-sidebar-bg, #1e1e1e)',
+              backgroundColor: 'var(--aura-app-bg, #181818)',
               borderColor: 'var(--aura-border, #333333)',
             }}
             className="p-3.5 rounded-xl border space-y-3"
@@ -271,7 +275,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             <div
               style={{
-                backgroundColor: 'var(--aura-dock-header-bg, #252526)',
+                backgroundColor: 'var(--aura-card-bg, #252526)',
                 borderColor: 'var(--aura-border, #333333)',
               }}
               className="flex items-center justify-between p-2.5 rounded-lg border"
@@ -293,184 +297,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               />
             </div>
           </div>
-
-          {/* 3 Windows Independent Colors Customizer */}
-          <div
-            style={{ borderColor: 'var(--aura-border, #333333)' }}
-            className="space-y-3 pt-3 border-t"
-          >
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 font-semibold text-[var(--aura-text)]">
-                <LayoutGrid size={14} className="text-cyan-400" />
-                <span>3 窗口独立配色 (3 Windows Custom Colors)</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomColors({});
-                  applyThemeToDocument(getThemeById(theme), {});
-                }}
-                className="text-[10px] text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] underline cursor-pointer"
-              >
-                恢复主题默认
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2.5">
-              {/* Window 1 */}
-              <div
-                style={{
-                  backgroundColor: 'var(--aura-sidebar-bg, #1e1e1e)',
-                  borderColor: 'var(--aura-border, #333333)',
-                }}
-                className="p-2.5 rounded-lg border space-y-2"
-              >
-                <div className="font-semibold text-[11px] text-[#007acc] flex items-center justify-between">
-                  <span>1号 侧边栏 (Sidebar)</span>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] text-[var(--aura-text-muted)]">背景色</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="color"
-                      value={customColors.window1Bg || getThemeById(theme).ui.sidebarBg}
-                      onChange={(e) => {
-                        const updated = { ...customColors, window1Bg: e.target.value };
-                        setCustomColors(updated);
-                        applyThemeToDocument(getThemeById(theme), updated);
-                      }}
-                      className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                    />
-                    <span className="font-mono text-[9px] text-[var(--aura-text-muted)]">
-                      {customColors.window1Bg || getThemeById(theme).ui.sidebarBg}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] text-[var(--aura-text-muted)]">前景色</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="color"
-                      value={customColors.window1Fg || getThemeById(theme).ui.text}
-                      onChange={(e) => {
-                        const updated = { ...customColors, window1Fg: e.target.value };
-                        setCustomColors(updated);
-                        applyThemeToDocument(getThemeById(theme), updated);
-                      }}
-                      className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                    />
-                    <span className="font-mono text-[9px] text-[var(--aura-text-muted)]">
-                      {customColors.window1Fg || getThemeById(theme).ui.text}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Window 2 */}
-              <div
-                style={{
-                  backgroundColor: 'var(--aura-sidebar-bg, #1e1e1e)',
-                  borderColor: 'var(--aura-border, #333333)',
-                }}
-                className="p-2.5 rounded-lg border space-y-2"
-              >
-                <div className="font-semibold text-[11px] text-emerald-400 flex items-center justify-between">
-                  <span>2号 编辑器 (Editor)</span>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] text-[var(--aura-text-muted)]">背景色</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="color"
-                      value={customColors.window2Bg || getThemeById(theme).ui.editorBg}
-                      onChange={(e) => {
-                        const updated = { ...customColors, window2Bg: e.target.value };
-                        setCustomColors(updated);
-                        applyThemeToDocument(getThemeById(theme), updated);
-                      }}
-                      className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                    />
-                    <span className="font-mono text-[9px] text-[var(--aura-text-muted)]">
-                      {customColors.window2Bg || getThemeById(theme).ui.editorBg}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] text-[var(--aura-text-muted)]">前景色</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="color"
-                      value={customColors.window2Fg || getThemeById(theme).ui.text}
-                      onChange={(e) => {
-                        const updated = { ...customColors, window2Fg: e.target.value };
-                        setCustomColors(updated);
-                        applyThemeToDocument(getThemeById(theme), updated);
-                      }}
-                      className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                    />
-                    <span className="font-mono text-[9px] text-[var(--aura-text-muted)]">
-                      {customColors.window2Fg || getThemeById(theme).ui.text}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Window 3 */}
-              <div
-                style={{
-                  backgroundColor: 'var(--aura-sidebar-bg, #1e1e1e)',
-                  borderColor: 'var(--aura-border, #333333)',
-                }}
-                className="p-2.5 rounded-lg border space-y-2"
-              >
-                <div className="font-semibold text-[11px] text-amber-400 flex items-center justify-between">
-                  <span>3号 终端 (Terminal)</span>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] text-[var(--aura-text-muted)]">背景色</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="color"
-                      value={customColors.window3Bg || getThemeById(theme).ui.dockBg}
-                      onChange={(e) => {
-                        const updated = { ...customColors, window3Bg: e.target.value };
-                        setCustomColors(updated);
-                        applyThemeToDocument(getThemeById(theme), updated);
-                      }}
-                      className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                    />
-                    <span className="font-mono text-[9px] text-[var(--aura-text-muted)]">
-                      {customColors.window3Bg || getThemeById(theme).ui.dockBg}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-[10px] text-[var(--aura-text-muted)]">前景色</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="color"
-                      value={customColors.window3Fg || getThemeById(theme).ui.text}
-                      onChange={(e) => {
-                        const updated = { ...customColors, window3Fg: e.target.value };
-                        setCustomColors(updated);
-                        applyThemeToDocument(getThemeById(theme), updated);
-                      }}
-                      className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
-                    />
-                    <span className="font-mono text-[9px] text-[var(--aura-text-muted)]">
-                      {customColors.window3Fg || getThemeById(theme).ui.text}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
         </div>
 
         <div
           style={{
-            backgroundColor: 'var(--aura-dock-header-bg, #1e1e1e)',
+            backgroundColor: 'var(--aura-topbar-bg, #1f1f1f)',
             borderColor: 'var(--aura-border, #333333)',
           }}
           className="px-6 py-3 border-t flex justify-end gap-2"

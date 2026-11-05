@@ -28,6 +28,7 @@ import {
   RotateCw,
   Download,
   Star,
+  PanelLeftClose,
   CheckCircle2,
   ExternalLink,
   ShieldCheck,
@@ -52,6 +53,7 @@ interface SidebarProps {
   activeView: 'files' | 'git' | 'plugins';
   workspaceDir: string;
   lang?: SupportedLang;
+  fontSize?: number;
   isFocused?: boolean;
   onSelectFile: (file: FileItem, viewMode?: 'editor' | 'markdown-preview' | 'markmap' | 'outline') => void;
   onOpenDiff?: (commitHash: string, filePath: string) => void;
@@ -62,6 +64,7 @@ interface SidebarProps {
   onChangeView: (view: 'files' | 'git' | 'plugins') => void;
   onChangeWorkspaceDir: () => void;
   onRefreshWorkspace: () => void;
+  onCollapseSidebar?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -71,6 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeView,
   workspaceDir,
   lang = 'zh-CN',
+  fontSize = 14,
   isFocused = false,
   onSelectFile,
   onOpenDiff,
@@ -81,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeView,
   onChangeWorkspaceDir,
   onRefreshWorkspace,
+  onCollapseSidebar,
 }) => {
   const t = translations[lang];
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
@@ -758,7 +763,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     ? 'font-semibold shadow-xs'
                     : isSelected
                     ? 'is-selected font-medium shadow-xs'
-                    : 'text-[var(--aura-sidebar-fg,var(--aura-text))]'
+                    : 'text-[var(--aura-sidebar-fg)]'
                 }`}
               >
                 {isDir ? (
@@ -805,8 +810,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ? '#ef4444'
                         : undefined,
                       opacity: item.gitStatus === 'IGNORED' ? 0.65 : undefined,
+                      fontSize: `${fontSize}px`,
                     }}
-                    className="flex-1 truncate font-sans text-[13.5px] tracking-normal"
+                    className="flex-1 truncate font-sans tracking-normal"
                   >
                     {item.name}
                   </span>
@@ -975,7 +981,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <span
           onClick={onChangeWorkspaceDir}
-          className="font-bold text-[var(--aura-text)] text-[13px] tracking-tight cursor-pointer hover:opacity-80 truncate"
+          style={{ color: 'var(--aura-sidebar-fg)' }}
+          className="font-bold text-[13px] tracking-tight cursor-pointer hover:opacity-80 truncate"
           title={`当前目录: ${workspaceDir} (点击切换)`}
         >
           {currentDirName}
@@ -1003,6 +1010,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <RotateCw size={13} />
           </button>
+          {onCollapseSidebar && (
+            <button
+              onClick={onCollapseSidebar}
+              title="向左收起侧边栏 (⌘B / Ctrl+B)"
+              className="p-1 hover:bg-black/10 dark:hover:bg-[#383838] hover:text-[#007acc] rounded transition-colors"
+            >
+              <PanelLeftClose size={13} />
+            </button>
+          )}
         </div>
       </div>
 

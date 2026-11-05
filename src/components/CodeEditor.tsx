@@ -780,7 +780,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       className="flex flex-col h-full w-full relative"
     >
       <div
-        style={{ backgroundColor: 'var(--aura-sidebar-bg)', borderColor: 'var(--aura-border)' }}
+        style={{ backgroundColor: 'var(--aura-editor-tab-bg, var(--aura-editor-bg))', borderColor: 'var(--aura-border)' }}
         className="flex items-center justify-between border-b h-9 relative z-30 select-none"
       >
         <div className="flex-1 flex items-center overflow-x-auto no-scrollbar h-full min-w-0">
@@ -795,7 +795,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                   borderTopColor: isActive ? 'var(--aura-accent)' : 'transparent',
                 }}
                 className={`group flex items-center justify-between gap-1.5 px-3 py-1 text-xs cursor-pointer border-r border-t-2 h-full transition-colors relative max-w-[190px] min-w-[90px] flex-shrink-0 ${
-                  isActive ? 'text-[var(--aura-editor-fg,var(--aura-text))] font-semibold' : 'text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-text)]'
+                  isActive ? 'text-[var(--aura-editor-fg)] font-semibold' : 'text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-editor-fg)]'
                 }`}
               >
                 <div
@@ -1048,7 +1048,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               </div>
             </div>
           ) : activeTab.viewMode === 'markdown-preview' ? (
-            <div className="h-full w-full flex bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg,var(--aura-text))] overflow-hidden relative">
+            <div className="h-full w-full flex bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg)] overflow-hidden relative">
               <div className="flex-1 h-full overflow-y-auto px-8 py-6 select-text no-scrollbar">
                 <div className="w-full max-w-4xl space-y-4">
                   <MarkdownPreviewEnhanced
@@ -1064,7 +1064,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               {isTocVisible ? (
                 <div
                   style={{ borderColor: 'var(--aura-border)' }}
-                  className="w-72 h-full border-l flex-shrink-0 flex flex-col bg-[var(--aura-sidebar-bg,#1e1e1e)] overflow-hidden select-none transition-all"
+                  className="w-72 h-full border-l flex-shrink-0 flex flex-col bg-[var(--aura-editor-tab-bg,var(--aura-editor-bg))] text-[var(--aura-editor-fg)] overflow-hidden select-none transition-all"
                 >
                   <div className="p-2.5 border-b border-[var(--aura-border)] flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--aura-text)]">
@@ -1182,13 +1182,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               )}
             </div>
           ) : activeTab.viewMode === 'markmap' ? (
-            <div className="h-full w-full flex flex-col bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg,var(--aura-text))] select-none">
+            <div className="h-full w-full flex flex-col bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg)] select-none">
               <div className="flex-1 w-full h-full min-h-0 relative">
                 <MarkmapViewer content={activeTab.content} themeId={themeId} />
               </div>
             </div>
           ) : activeTab.viewMode === 'outline' ? (
-            <div className="h-full w-full overflow-y-auto p-8 select-text bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg,var(--aura-text))]">
+            <div className="h-full w-full overflow-y-auto p-8 select-text bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg)]">
               <div className="max-w-3xl mx-auto space-y-4">
                 <div className="space-y-2 pt-2">
                   {activeTab.content
@@ -1245,8 +1245,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                   original={activeTab.diffOriginal ?? ''}
                   modified={activeTab.diffModified ?? activeTab.content}
                   options={{
-                    fontSize: fontSize || 13,
-                    fontFamily: '"Hack Nerd Font Mono", "JetBrainsMono Nerd Font", Menlo, Monaco, Consolas, monospace',
+                    fontSize: fontSize || 14,
+                    fontFamily: "Menlo, Monaco, 'Courier New', monospace",
                     readOnly: true,
                     renderSideBySide: true,
                     minimap: { enabled: true, scale: 0.75 },
@@ -1276,8 +1276,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                   onMount={handleEditorDidMount}
                   onChange={(val) => onChangeContent(val || '')}
                   options={{
-                    fontSize: fontSize || 13,
-                    fontFamily: '"Hack Nerd Font Mono", "JetBrainsMono Nerd Font", Menlo, Monaco, Consolas, monospace',
+                    fontSize: fontSize || 14,
+                    fontFamily: "Menlo, Monaco, 'Courier New', monospace",
                     tabSize: 2,
                     readOnly: false,
                     renderLineHighlight: vimMode === 'INSERT' ? 'line' : 'none',
@@ -1300,7 +1300,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               </div>
               <div
                 style={{
-                  backgroundColor: 'var(--aura-sidebar-bg)',
+                  backgroundColor: 'var(--aura-editor-tab-bg, var(--aura-editor-bg))',
                   borderColor: 'var(--aura-border)',
                   color: vimMode === 'INSERT' ? '#4ec9b0' : (vimMode === 'VISUAL' ? '#dcdcaa' : 'var(--aura-accent)'),
                 }}

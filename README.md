@@ -91,7 +91,7 @@ For complete installation and usage instructions in Chinese, please refer to:
 | **`Ctrl+h`** | Focus **Window 1** (File Tree & Git) |
 | **`Ctrl+k`** | Focus **Window 2** (Code Editor) |
 | **`Ctrl+l`** | Focus **Window 3** (Terminal / OpenCode Dock) |
-| **`Cmd+b`** | Toggle Left Sidebar Visibility |
+| **`Cmd+b` / `Ctrl+b`** | Toggle Left Sidebar Visibility (Click button or drag left to collapse) |
 | **`Cmd+d`** | Spawn a new native Terminal (zsh) |
 | **`Shift+Cmd+m`** | Spawn a native OpenCode AI session |
 | **`Cmd+w`** | Close active editor tab or terminal pane |
