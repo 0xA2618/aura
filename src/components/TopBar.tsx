@@ -121,6 +121,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 setIsAgentMenuOpen(false);
                 onRunInstallCommand(cmd, name);
               }}
+              onOpenSettings={onOpenSettings}
             />
           )}
         </div>
