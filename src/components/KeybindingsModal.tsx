@@ -63,40 +63,75 @@ export const KeybindingsModal: React.FC<KeybindingsModalProps> = ({ isOpen, onCl
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="w-[740px] max-h-[85vh] bg-[#252526] border border-[#454545] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100">
+      <div
+        style={{
+          backgroundColor: 'var(--aura-card-bg, #252526)',
+          borderColor: 'var(--aura-border, #454545)',
+          color: 'var(--aura-text, #cccccc)',
+        }}
+        className="w-[740px] max-h-[85vh] border rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#333333] bg-[#2d2d2d] select-none">
-          <div className="flex items-center gap-2 text-sm text-[#cccccc] font-semibold">
+        <div
+          style={{
+            backgroundColor: 'var(--aura-topbar-bg, #2d2d2d)',
+            borderColor: 'var(--aura-border, #333333)',
+          }}
+          className="flex items-center justify-between px-4 py-3 border-b select-none"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--aura-text)]">
             <Keyboard size={16} className="text-[#007acc]" />
             <span>键盘快捷键 (Keyboard Shortcuts - VS Code Mappings)</span>
           </div>
-          <button onClick={onClose} className="text-[#858585] hover:text-white p-1 rounded hover:bg-[#3c3c3c]">
+          <button onClick={onClose} className="aura-btn-ghost p-1 rounded-md">
             <X size={16} />
           </button>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="p-3 bg-[#1e1e1e] border-b border-[#2d2d2d] flex items-center gap-2">
+        <div
+          style={{
+            backgroundColor: 'var(--aura-app-bg, #1e1e1e)',
+            borderColor: 'var(--aura-border, #2d2d2d)',
+          }}
+          className="p-3 border-b flex items-center gap-2"
+        >
           <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-2.5 text-[#666666]" />
+            <Search size={14} className="absolute left-3 top-2.5 text-[var(--aura-text-muted)]" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="键入以搜索快捷键命令 (Type to search keybindings, e.g. ⌘P, 保存, Terminal)..."
-              className="w-full bg-[#252526] text-xs text-[#cccccc] pl-9 pr-3 py-1.5 rounded-lg border border-[#3c3c3c] focus:outline-none focus:border-[#007acc]"
+              style={{
+                backgroundColor: 'var(--aura-input-bg, #252526)',
+                borderColor: 'var(--aura-border, #3c3c3c)',
+                color: 'var(--aura-text, #cccccc)',
+              }}
+              className="w-full text-xs pl-9 pr-3 py-1.5 rounded-lg border focus:outline-none focus:border-[#007acc]"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-[#252526] p-1 rounded-lg border border-[#333333]">
+          <div
+            style={{
+              backgroundColor: 'var(--aura-card-bg, #252526)',
+              borderColor: 'var(--aura-border, #333333)',
+            }}
+            className="flex items-center gap-1 p-1 rounded-lg border"
+          >
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-2 py-1 text-[11px] rounded-md transition-all ${
+                style={
                   selectedCategory === cat
-                    ? 'bg-[#37373d] text-white font-medium'
-                    : 'text-[#858585] hover:text-[#cccccc]'
+                    ? { backgroundColor: 'var(--aura-accent)', color: 'var(--aura-accent-fg, #ffffff)' }
+                    : undefined
+                }
+                className={`px-2.5 py-1 text-[11px] rounded-md transition-all font-medium cursor-pointer ${
+                  selectedCategory === cat
+                    ? 'shadow-xs'
+                    : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]'
                 }`}
               >
                 {cat}
@@ -106,24 +141,32 @@ export const KeybindingsModal: React.FC<KeybindingsModalProps> = ({ isOpen, onCl
         </div>
 
         {/* Keybindings Table */}
-        <div className="flex-1 overflow-y-auto p-2 divide-y divide-[#2d2d2d]">
+        <div
+          style={{ borderColor: 'var(--aura-border, #2d2d2d)' }}
+          className="flex-1 overflow-y-auto p-2 divide-y divide-[var(--aura-border,#2d2d2d)]"
+        >
           {filtered.length === 0 ? (
-            <div className="text-center py-12 text-xs text-[#666666]">未找到匹配的快捷键</div>
+            <div className="text-center py-12 text-xs text-[var(--aura-text-muted)]">未找到匹配的快捷键</div>
           ) : (
             filtered.map((item) => (
               <div
                 key={item.command}
-                className="flex items-center justify-between px-3 py-2 text-xs hover:bg-[#2a2d2e] rounded-md group transition-colors"
+                className="flex items-center justify-between px-3 py-2 text-xs hover:bg-black/5 dark:hover:bg-white/5 rounded-md group transition-colors"
               >
                 <div className="flex flex-col">
-                  <span className="text-[#e0e0e0] font-sans font-medium">{item.description}</span>
-                  <span className="text-[10px] text-[#666666] font-mono">{item.command}</span>
+                  <span className="text-[var(--aura-text)] font-sans font-medium">{item.description}</span>
+                  <span className="text-[10px] text-[var(--aura-text-muted)] font-mono">{item.command}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   {item.keybinding.split(' ').map((key, i) => (
                     <span
                       key={i}
-                      className="px-2 py-0.5 rounded-md bg-[#1e1e1e] border border-[#3c3c3c] font-mono text-[11px] text-[#007acc] font-semibold shadow-xs"
+                      style={{
+                        backgroundColor: 'var(--aura-input-bg, #1e1e1e)',
+                        borderColor: 'var(--aura-border, #3c3c3c)',
+                        color: 'var(--aura-accent, #007acc)',
+                      }}
+                      className="px-2 py-0.5 rounded-md border font-mono text-[11px] font-semibold shadow-xs"
                     >
                       {key}
                     </span>
@@ -135,12 +178,19 @@ export const KeybindingsModal: React.FC<KeybindingsModalProps> = ({ isOpen, onCl
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2.5 bg-[#1e1e1e] border-t border-[#333333] flex items-center justify-between text-[11px] text-[#666666] select-none">
+        <div
+          style={{
+            backgroundColor: 'var(--aura-topbar-bg, #1e1e1e)',
+            borderColor: 'var(--aura-border, #333333)',
+            color: 'var(--aura-text-muted, #858585)',
+          }}
+          className="px-4 py-2.5 border-t flex items-center justify-between text-[11px] select-none"
+        >
           <div className="flex items-center gap-1">
             <Sparkles size={12} className="text-[#007acc]" />
             <span>深度兼容 VS Code 标准快捷键体系与 Neovim 经典流转键位</span>
           </div>
-          <span>Esc 键快速关闭</span>
+          <span className="font-mono">Esc 键快速关闭</span>
         </div>
       </div>
     </div>

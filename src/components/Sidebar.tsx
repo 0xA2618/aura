@@ -973,7 +973,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <Icon size={18} strokeWidth={1.9} />
               {tab.badge && (
-                <span className="absolute -top-1 -right-1 bg-[#007acc] text-white text-[9px] font-bold px-1 rounded-full leading-tight font-mono">
+                <span
+                  style={{
+                    backgroundColor: 'var(--aura-accent, #007acc)',
+                    color: 'var(--aura-accent-fg, #ffffff)',
+                  }}
+                  className="absolute -top-1 -right-1 text-[9px] font-bold px-1 rounded-full leading-tight font-mono"
+                >
                   {tab.badge}
                 </span>
               )}
@@ -1111,16 +1117,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setGitViewSection('changes')}
-                className={`flex-1 py-1.5 px-2 rounded-md flex items-center justify-center gap-1.5 transition-all ${
+                style={
                   gitViewSection === 'changes'
-                    ? 'bg-[#007acc]/20 text-[#007acc] shadow-2xs font-bold'
-                    : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
+                    ? {
+                        backgroundColor: 'rgba(125, 125, 125, 0.15)',
+                        color: 'var(--aura-accent, #007acc)',
+                        borderColor: 'var(--aura-accent, #007acc)',
+                      }
+                    : undefined
+                }
+                className={`flex-1 py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all text-xs border ${
+                  gitViewSection === 'changes'
+                    ? 'font-bold shadow-2xs'
+                    : 'border-transparent text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
                 }`}
               >
                 <FileDiff size={13} />
                 <span>Changes</span>
                 {changedCount > 0 && (
-                  <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-[#007acc] text-white font-mono">
+                  <span
+                    style={{
+                      backgroundColor: 'var(--aura-accent, #007acc)',
+                      color: 'var(--aura-accent-fg, #ffffff)',
+                    }}
+                    className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold"
+                  >
                     {changedCount}
                   </span>
                 )}
@@ -1129,10 +1150,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setGitViewSection('history')}
-                className={`flex-1 py-1.5 px-2 rounded-md flex items-center justify-center gap-1.5 transition-all ${
+                style={
                   gitViewSection === 'history'
-                    ? 'bg-[#007acc]/20 text-[#007acc] shadow-2xs font-bold'
-                    : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
+                    ? {
+                        backgroundColor: 'rgba(125, 125, 125, 0.15)',
+                        color: 'var(--aura-accent, #007acc)',
+                        borderColor: 'var(--aura-accent, #007acc)',
+                      }
+                    : undefined
+                }
+                className={`flex-1 py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all text-xs border ${
+                  gitViewSection === 'history'
+                    ? 'font-bold shadow-2xs'
+                    : 'border-transparent text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
                 }`}
               >
                 <History size={13} />
@@ -1631,7 +1661,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {!isInstalled ? (
                           <button
                             onClick={() => onInstallPlugin?.(plugin)}
-                            className="text-[10px] px-2 py-0.5 rounded font-medium bg-[#007acc] text-white hover:bg-[#0062a3] transition-all flex items-center gap-1"
+                            className="aura-btn-primary text-[10px] px-2.5 py-0.5 rounded-md"
                           >
                             <Download size={10} />
                             <span>Install</span>

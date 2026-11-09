@@ -79,15 +79,28 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="w-[660px] bg-[#252526] border border-[#454545] rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 select-none">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#333333] bg-[#2d2d2d]">
-          <div className="flex items-center gap-2 text-sm text-[#cccccc] font-semibold">
+      <div
+        style={{
+          backgroundColor: 'var(--aura-card-bg, #252526)',
+          borderColor: 'var(--aura-border, #454545)',
+          color: 'var(--aura-text, #cccccc)',
+        }}
+        className="w-[660px] border rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 select-none"
+      >
+        <div
+          style={{
+            backgroundColor: 'var(--aura-topbar-bg, #2d2d2d)',
+            borderColor: 'var(--aura-border, #333333)',
+          }}
+          className="flex items-center justify-between px-4 py-3 border-b select-none"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--aura-text)]">
             <Keyboard size={16} className="text-[#007acc]" />
             <span>快捷键配置与操作指南 (Keyboard Shortcuts & Help)</span>
           </div>
           <button
             onClick={onClose}
-            className="text-[#858585] hover:text-white p-1 rounded hover:bg-[#3c3c3c] transition-colors"
+            className="aura-btn-ghost p-1 rounded-md"
           >
             <X size={16} />
           </button>
@@ -95,16 +108,33 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
 
         <div className="p-5 space-y-4 max-h-[72vh] overflow-y-auto no-scrollbar">
           {categories.map((cat, idx) => (
-            <div key={idx} className="p-3 bg-[#1e1e1e] rounded-xl border border-[#333333] space-y-2">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-[#007acc] flex items-center gap-1.5">
+            <div
+              key={idx}
+              style={{
+                backgroundColor: 'var(--aura-input-bg, #1e1e1e)',
+                borderColor: 'var(--aura-border, #333333)',
+              }}
+              className="p-3.5 rounded-xl border space-y-2.5"
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--aura-accent,#007acc)] flex items-center gap-1.5">
                 <Command size={12} />
                 <span>{cat.title}</span>
               </div>
-              <div className="grid grid-cols-1 divide-y divide-[#2a2a2a]">
+              <div
+                style={{ borderColor: 'var(--aura-border, #2a2a2a)' }}
+                className="grid grid-cols-1 divide-y divide-[var(--aura-border,#2a2a2a)]"
+              >
                 {cat.items.map((item, i) => (
                   <div key={i} className="flex items-center justify-between py-1.5 px-1 text-xs">
-                    <span className="text-[#cccccc] text-[12px]">{item.desc}</span>
-                    <span className="font-mono text-[11px] bg-[#2d2d2d] text-[#4ec9b0] px-2 py-0.5 rounded border border-[#3c3c3c] shadow-xs">
+                    <span className="text-[var(--aura-text)] text-[12px]">{item.desc}</span>
+                    <span
+                      style={{
+                        backgroundColor: 'var(--aura-card-bg, #2d2d2d)',
+                        borderColor: 'var(--aura-border, #3c3c3c)',
+                        color: 'var(--aura-accent, #007acc)',
+                      }}
+                      className="font-mono text-[11px] px-2 py-0.5 rounded-md border font-semibold shadow-xs"
+                    >
                       {item.key}
                     </span>
                   </div>
@@ -114,11 +144,18 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
           ))}
         </div>
 
-        <div className="px-5 py-2.5 bg-[#1e1e1e] border-t border-[#333333] flex items-center justify-between text-xs text-gray-500 font-mono">
+        <div
+          style={{
+            backgroundColor: 'var(--aura-topbar-bg, #1e1e1e)',
+            borderColor: 'var(--aura-border, #333333)',
+            color: 'var(--aura-text-muted, #858585)',
+          }}
+          className="px-5 py-2.5 border-t flex items-center justify-between text-xs font-mono"
+        >
           <span>只读配置信息 (Read-Only)</span>
           <button
             onClick={onClose}
-            className="px-3.5 py-1 rounded bg-[#333333] hover:bg-[#444444] text-[#cccccc] hover:text-white transition-colors"
+            className="aura-btn-secondary px-3.5 py-1"
           >
             关闭 (Esc)
           </button>

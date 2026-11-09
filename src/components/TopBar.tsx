@@ -88,7 +88,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           data-tauri-no-drag
           onClick={onOpenOpenCode}
           title="在3号窗口打开 OpenCode 对话 (Shift+⌘+M)"
-          className="p-1.5 rounded text-[var(--aura-text-muted)] hover:text-[#007acc] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="p-1.5 rounded-lg text-[var(--aura-text-muted)] hover:text-[var(--aura-accent,#007acc)] hover:bg-black/5 dark:hover:bg-white/10 active:scale-[0.96] transition-all"
         >
           <Bot size={16} />
         </button>
@@ -98,11 +98,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={onToggleBottom}
           title={isBottomOpen ? '隐藏下方 AI/终端 (Space + oc)' : '展开下方 AI/终端 (Space + oc)'}
           style={{
-            backgroundColor: isBottomOpen ? 'rgba(0, 122, 204, 0.12)' : 'transparent',
+            backgroundColor: isBottomOpen ? 'rgba(125, 125, 125, 0.14)' : 'transparent',
             borderColor: isBottomOpen ? 'var(--aura-accent, #007acc)' : 'transparent',
-            color: isBottomOpen ? '#007acc' : 'var(--aura-text-muted)'
+            color: isBottomOpen ? 'var(--aura-accent, #007acc)' : 'var(--aura-text-muted)'
           }}
-          className="p-1.5 rounded border transition-colors hover:text-[#007acc] hover:bg-black/5 dark:hover:bg-white/10"
+          className="p-1.5 rounded-lg border transition-all hover:bg-black/5 dark:hover:bg-white/10 active:scale-[0.96]"
         >
           <Terminal size={16} />
         </button>
@@ -111,7 +111,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           data-tauri-no-drag
           onClick={onOpenSettings}
           title="首选项与设置 (⌘, / Settings)"
-          className="p-1.5 rounded text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+          className="p-1.5 rounded-lg text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/10 active:scale-[0.96] transition-all"
         >
           <Settings size={16} />
         </button>
