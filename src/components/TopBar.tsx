@@ -9,6 +9,8 @@ interface TopBarProps {
   workspaceDir: string;
   gitBranch?: string;
   isBottomOpen: boolean;
+  isSidebarOpen?: boolean;
+  sidebarWidth?: number;
   onChangeView: (view: 'files' | 'git' | 'plugins') => void;
   onOpenOpenCode: () => void;
   onSelectAgent: (agent: DetectedAgent) => void;
@@ -23,6 +25,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   workspaceDir,
   gitBranch,
   isBottomOpen,
+  isSidebarOpen = true,
+  sidebarWidth = 260,
   onChangeView,
   onOpenOpenCode,
   onSelectAgent,
@@ -37,6 +41,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   const projectName = workspaceDir
     ? workspaceDir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || workspaceDir
     : '';
+
+  // Left offset aligning directly with the start of Window 2 (Editor container)
+  const window2LeftOffset = isSidebarOpen ? sidebarWidth + 6 : 84;
   const handleDragMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0 && isTauri) {
       const target = e.target as HTMLElement;
@@ -82,8 +89,15 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Center: Current Workspace Project Name & Branch */}
-      <div data-tauri-drag-region className="flex-1 flex items-center justify-center px-4 overflow-hidden h-full">
+      {/* Left-Aligned with Window 2 (Editor container): Project Name & Branch */}
+      <div
+        data-tauri-drag-region
+        style={{
+          left: `${window2LeftOffset}px`,
+          transition: 'left 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+        className="absolute top-0 bottom-0 flex items-center gap-2 overflow-hidden max-w-[calc(100vw-360px)]"
+      >
         {projectName ? (
           <div
             data-tauri-drag-region
@@ -113,6 +127,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           </span>
         )}
       </div>
+
+      <div data-tauri-drag-region className="flex-1" />
 
       {/* Right side: Global Actions (Robot Dropdown -> Agents, Terminal -> Toggle Dock, Settings) */}
       <div data-tauri-no-drag className="flex items-center gap-1 relative z-[70]">

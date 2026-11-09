@@ -1550,6 +1550,8 @@ export function App() {
         workspaceDir={workspaceDir}
         gitBranch={gitBranch}
         isBottomOpen={isBottomOpen}
+        isSidebarOpen={isSidebarOpen}
+        sidebarWidth={sidebarWidth}
         onChangeView={setActiveView}
         onOpenOpenCode={handleOpenOpenCodeTab}
         onSelectAgent={handleLaunchAgent}
