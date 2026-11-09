@@ -313,8 +313,30 @@ fn fs_watch_workspace(
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GitStatusSummary {
+    pub branch: Option<String>,
     pub total_changed: usize,
     pub files: Vec<FileEntry>,
+}
+
+#[tauri::command]
+fn git_get_current_branch(workspace: Option<String>) -> Result<String, String> {
+    let target = match workspace {
+        Some(p) if !p.is_empty() && Path::new(&p).exists() => PathBuf::from(p),
+        _ => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(target)
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            Ok(branch)
+        }
+        _ => Ok(String::new()),
+    }
 }
 
 #[tauri::command]
@@ -323,6 +345,20 @@ fn git_get_status(workspace: Option<String>) -> Result<GitStatusSummary, String>
         Some(p) if !p.is_empty() && Path::new(&p).exists() => PathBuf::from(p),
         _ => std::env::current_dir().map_err(|e| e.to_string())?,
     };
+
+    let branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&target)
+        .output()
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() { Some(s) } else { None }
+            } else {
+                None
+            }
+        });
 
     let mut changed_files = Vec::new();
     let output = Command::new("git")
@@ -367,6 +403,7 @@ fn git_get_status(workspace: Option<String>) -> Result<GitStatusSummary, String>
     }
 
     Ok(GitStatusSummary {
+        branch,
         total_changed: changed_files.len(),
         files: changed_files,
     })
@@ -1051,6 +1088,7 @@ pub fn run() {
             fs_pick_workspace,
             fs_watch_workspace,
             git_get_status,
+            git_get_current_branch,
             git_get_commits,
             git_get_commit_files,
             git_get_file_diff,

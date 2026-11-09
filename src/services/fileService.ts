@@ -416,6 +416,18 @@ export async function renameFileSystemEntry(oldPath: string, newPath: string): P
   return true;
 }
 
+export async function fetchCurrentBranch(repoPath?: string): Promise<string> {
+  if (isTauri) {
+    try {
+      const branch = await invoke<string>('git_get_current_branch', { workspace: repoPath || null });
+      return branch || '';
+    } catch (e) {
+      console.error('[Rust git_get_current_branch error]', e);
+    }
+  }
+  return '';
+}
+
 export async function fetchGitStatus(repoPath?: string): Promise<{ totalChanged: number; files: FileItem[] }> {
   if (isTauri) {
     try {

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Settings, Bot, Terminal, ChevronDown } from 'lucide-react';
+import { Settings, Bot, Terminal, ChevronDown, GitBranch } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTauri, startWindowDragging, DetectedAgent } from '../services/fileService';
 import { AgentDropdownMenu } from './AgentDropdownMenu';
@@ -7,6 +7,7 @@ import { AgentDropdownMenu } from './AgentDropdownMenu';
 interface TopBarProps {
   activeView: 'files' | 'git' | 'plugins';
   workspaceDir: string;
+  gitBranch?: string;
   isBottomOpen: boolean;
   onChangeView: (view: 'files' | 'git' | 'plugins') => void;
   onOpenOpenCode: () => void;
@@ -20,6 +21,7 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({
   activeView,
   workspaceDir,
+  gitBranch,
   isBottomOpen,
   onChangeView,
   onOpenOpenCode,
@@ -31,6 +33,10 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const agentDropdownRef = useRef<HTMLDivElement>(null);
+
+  const projectName = workspaceDir
+    ? workspaceDir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || workspaceDir
+    : '';
   const handleDragMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0 && isTauri) {
       const target = e.target as HTMLElement;
@@ -76,18 +82,35 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
       </div>
 
-      {/* Center: Current Workspace Directory */}
+      {/* Center: Current Workspace Project Name & Branch */}
       <div data-tauri-drag-region className="flex-1 flex items-center justify-center px-4 overflow-hidden h-full">
-        {workspaceDir ? (
-          <span
+        {projectName ? (
+          <div
             data-tauri-drag-region
-            className="text-xs font-mono text-[var(--aura-text-muted,#888888)] truncate cursor-default select-none"
             title={workspaceDir}
+            className="flex items-center gap-1.5 cursor-default select-none font-sans"
           >
-            {workspaceDir}
-          </span>
+            <span
+              data-tauri-drag-region
+              className="text-xs font-semibold text-[var(--aura-text,#cccccc)] tracking-tight truncate"
+            >
+              {projectName}
+            </span>
+
+            {gitBranch && (
+              <div
+                data-tauri-drag-region
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono font-medium text-[var(--aura-text-muted,#858585)] bg-black/5 dark:bg-white/5 border border-[var(--aura-border,rgba(125,125,125,0.15))]"
+              >
+                <GitBranch size={11} className="text-[var(--aura-accent,#007acc)]" />
+                <span>{gitBranch}</span>
+              </div>
+            )}
+          </div>
         ) : (
-          <span data-tauri-drag-region className="text-xs font-mono text-[var(--aura-text-muted,#555555)] cursor-default select-none">Aura IDE</span>
+          <span data-tauri-drag-region className="text-xs font-mono text-[var(--aura-text-muted,#555555)] cursor-default select-none">
+            Aura IDE
+          </span>
         )}
       </div>
 

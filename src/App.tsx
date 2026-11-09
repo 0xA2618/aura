@@ -32,6 +32,7 @@ import {
   isTauri,
   exitApp,
   DetectedAgent,
+  fetchCurrentBranch,
 } from './services/fileService';
 import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check, Move } from 'lucide-react';
 import { OpenCodeLogo, AntigravityLogo, CodexLogo, ClaudeLogo } from './components/AgentDropdownMenu';
@@ -485,6 +486,7 @@ export function App() {
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
+  const [gitBranch, setGitBranch] = useState<string>('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -507,6 +509,8 @@ export function App() {
     setFiles(fileList);
     const commitList = await fetchGitCommits(targetDir || undefined);
     setCommits(commitList);
+    const branch = await fetchCurrentBranch(targetDir || undefined);
+    setGitBranch(branch);
   };
 
   const handleOpenWorkspaceDialog = async () => {
@@ -1544,6 +1548,7 @@ export function App() {
       <TopBar
         activeView={activeView}
         workspaceDir={workspaceDir}
+        gitBranch={gitBranch}
         isBottomOpen={isBottomOpen}
         onChangeView={setActiveView}
         onOpenOpenCode={handleOpenOpenCodeTab}
