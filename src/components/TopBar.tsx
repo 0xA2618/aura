@@ -65,7 +65,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       onMouseDown={handleDragMouseDown}
       onDoubleClick={handleDoubleClick}
       style={{ backgroundColor: 'var(--aura-topbar-bg)', borderColor: 'var(--aura-border)' }}
-      className="h-9 w-full border-b flex items-center justify-between select-none px-2 z-20 cursor-default"
+      className="h-9 w-full border-b flex items-center justify-between select-none px-2 relative z-[60] cursor-default"
     >
       {/* 80px safe area for macOS native traffic light buttons with subtle inactive contrast ring */}
       <div data-tauri-drag-region className="flex items-center">
@@ -90,8 +90,8 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Right side: Global Actions (Robot Dropdown -> Agents, Terminal -> Toggle Dock, Settings) */}
-      <div data-tauri-no-drag className="flex items-center gap-1">
-        <div className="relative" ref={agentDropdownRef} data-tauri-no-drag>
+      <div data-tauri-no-drag className="flex items-center gap-1 relative z-[70]">
+        <div className="relative z-[80]" ref={agentDropdownRef} data-tauri-no-drag>
           <button
             data-tauri-no-drag
             onClick={() => setIsAgentMenuOpen((prev) => !prev)}

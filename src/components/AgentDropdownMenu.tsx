@@ -148,7 +148,7 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
         borderColor: 'rgba(255, 255, 255, 0.08)',
         boxShadow: '0 12px 32px -4px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.4)',
       }}
-      className="absolute right-0 top-full mt-2 w-[240px] rounded-xl border z-50 overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 font-sans"
+      className="absolute right-0 top-full mt-1.5 w-[240px] rounded-xl border z-[100] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 font-sans"
     >
       {/* Section Header */}
       <div className="px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-[#8c93a0] tracking-tight">
