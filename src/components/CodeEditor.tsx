@@ -15,6 +15,7 @@ interface CodeEditorProps {
   plugins?: PluginManifest[];
   themeId?: string;
   fontSize?: number;
+  fontFamily?: string;
   onSelectTab: (tab: OpenTab) => void;
   onCloseTab: (tabId: string) => void;
   onChangeContent: (content: string) => void;
@@ -27,12 +28,23 @@ interface CodeEditorProps {
   onOpenFileByPath?: (path: string) => void;
 }
 
+const DEFAULT_EDITOR_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "PingFang SC", "Microsoft YaHei", monospace';
+
+const getEffectiveEditorFont = (customFont?: string) => {
+  if (customFont && customFont.trim()) {
+    const clean = customFont.trim().replace(/^['"]|['"]$/g, '');
+    return `"${clean}", "JetBrains Mono", Menlo, Monaco, 'Courier New', ${DEFAULT_EDITOR_FALLBACK}`;
+  }
+  return `"JetBrains Mono", Menlo, Monaco, 'Courier New', ${DEFAULT_EDITOR_FALLBACK}`;
+};
+
 export const CodeEditor: React.FC<CodeEditorProps> = ({
   activeTab,
   tabs,
   plugins = [],
   themeId = 'vs-dark',
   fontSize = 13,
+  fontFamily,
   onSelectTab,
   onCloseTab,
   onChangeContent,
@@ -985,7 +997,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                             <>
                               <button
                                 onClick={() => onTogglePlugin?.(activeTab.extensionData!.id)}
-                                className="px-3 py-1 rounded text-xs font-medium bg-[var(--aura-card-bg,#3c3c3c)] hover:bg-[#4a4a4a] text-[var(--aura-text)] border border-[var(--aura-border)] transition-colors"
+                                className="aura-btn-secondary px-3 py-1"
                               >
                                 {isLiveEnabled ? 'Disable' : 'Enable'}
                               </button>
@@ -993,7 +1005,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                                 onClick={() => {
                                   onUninstallPlugin?.(activeTab.extensionData!.id);
                                 }}
-                                className="px-3 py-1 rounded text-xs font-medium bg-[var(--aura-card-bg,#3c3c3c)] hover:bg-red-900/60 text-red-500 hover:text-white border border-[var(--aura-border)] transition-colors"
+                                className="aura-btn-danger px-3 py-1"
                               >
                                 Uninstall
                               </button>
@@ -1004,7 +1016,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                         return (
                           <button
                             onClick={() => onInstallPlugin?.(activeTab.extensionData)}
-                            className="px-4 py-1 rounded text-xs font-medium bg-[#007acc] hover:bg-[#0062a3] text-white transition-colors flex items-center gap-1.5"
+                            className="aura-btn-primary px-4 py-1"
                           >
                             <Download size={13} />
                             <span>Install</span>
@@ -1246,7 +1258,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                   modified={activeTab.diffModified ?? activeTab.content}
                   options={{
                     fontSize: fontSize || 14,
-                    fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+                    fontFamily: getEffectiveEditorFont(fontFamily),
                     readOnly: true,
                     renderSideBySide: true,
                     minimap: { enabled: true, scale: 0.75 },
@@ -1278,7 +1290,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                   onChange={(val) => onChangeContent(val || '')}
                   options={{
                     fontSize: fontSize || 14,
-                    fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+                    fontFamily: getEffectiveEditorFont(fontFamily),
                     tabSize: 2,
                     readOnly: false,
                     renderLineHighlight: vimMode === 'INSERT' ? 'line' : 'none',

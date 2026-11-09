@@ -139,6 +139,7 @@ interface BottomDockProps {
   workspaceDir: string;
   themeId: string;
   fontSize?: number;
+  fontFamily?: string;
   bottomTabs: BottomTab[];
   activeBottomTabId: string;
   focusedPaneId?: string;
@@ -168,6 +169,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
   workspaceDir,
   themeId,
   fontSize,
+  fontFamily,
   bottomTabs,
   activeBottomTabId,
   focusedPaneId,
@@ -279,7 +281,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                   )}
                   <button
                     onClick={(e) => onCloseDockTab(bt.id, e)}
-                    className="hover:bg-[#404040] rounded p-0.5 ml-1 text-gray-400 hover:text-white"
+                    className="aura-btn-ghost p-0.5 ml-1 rounded-sm text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]"
                   >
                     <X size={11} />
                   </button>
@@ -290,7 +292,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
             <button
               onClick={onNewTerminalTab}
               title="新建终端 (New Terminal)"
-              className="p-1 hover:bg-black/10 dark:hover:bg-[#333333] rounded-md text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] ml-1"
+              className="aura-btn-ghost p-1 ml-1 text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]"
             >
               <Plus size={14} />
             </button>
@@ -300,14 +302,14 @@ const BottomDockArea = React.memo<BottomDockProps>(({
             <button
               onClick={onToggleHeight}
               title="切换高度"
-              className="p-1 hover:bg-black/10 dark:hover:bg-[#333333] rounded-md text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]"
+              className="aura-btn-ghost p-1 text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]"
             >
               {bottomHeight === 480 ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
             </button>
             <button
               onClick={onCloseDock}
               title="最小化收起 (Space + oc)"
-              className="p-1 hover:bg-black/10 dark:hover:bg-[#333333] rounded-md text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]"
+              className="aura-btn-ghost p-1 text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]"
             >
               <X size={13} />
             </button>
@@ -367,6 +369,8 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                       mode={bt.type === 'terminal' ? 'shell' : 'opencode'}
                       themeId={themeId}
                       fontSize={fontSize}
+                      fontFamily={fontFamily}
+                      isVisible={isVisible}
                     />
                   </div>
                 ))}
@@ -383,6 +387,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
     prev.workspaceDir === next.workspaceDir &&
     prev.themeId === next.themeId &&
     prev.fontSize === next.fontSize &&
+    prev.fontFamily === next.fontFamily &&
     prev.activeBottomTabId === next.activeBottomTabId &&
     prev.isBottomOpen === next.isBottomOpen &&
     prev.bottomHeight === next.bottomHeight &&
@@ -425,6 +430,12 @@ export function App() {
   });
   const [terminalFontSize, setTerminalFontSize] = useState<number>(() => {
     return Number(localStorage.getItem('aura:terminalFontSize') || '13.5');
+  });
+  const [editorFontFamily, setEditorFontFamily] = useState<string>(() => {
+    return localStorage.getItem('aura:editorFontFamily') || 'JetBrains Mono';
+  });
+  const [terminalFontFamily, setTerminalFontFamily] = useState<string>(() => {
+    return localStorage.getItem('aura:terminalFontFamily') || 'JetBrains Mono';
   });
 
   // Top-Right Editor Tabs
@@ -1585,6 +1596,7 @@ export function App() {
               plugins={plugins}
               themeId={themeId}
               fontSize={editorFontSize}
+              fontFamily={editorFontFamily}
               onSelectTab={(t) => setActiveTabId(t.id)}
               onCloseTab={handleCloseTab}
               onChangeContent={handleChangeContent}
@@ -1606,6 +1618,7 @@ export function App() {
               workspaceDir={workspaceDir}
               themeId={themeId}
               fontSize={terminalFontSize}
+              fontFamily={terminalFontFamily}
               bottomTabs={bottomTabs}
               activeBottomTabId={activeBottomTabId}
               focusedPaneId={focusedPaneIdRef.current}
@@ -1657,6 +1670,12 @@ export function App() {
           setEditorFontSize(updatedSize);
           const updatedSidebarSize = Number(localStorage.getItem('aura:sidebarFontSize') || '14');
           setSidebarFontSize(updatedSidebarSize);
+          const updatedTermSize = Number(localStorage.getItem('aura:terminalFontSize') || '13.5');
+          setTerminalFontSize(updatedTermSize);
+          const updatedEditorFont = localStorage.getItem('aura:editorFontFamily') || 'JetBrains Mono';
+          setEditorFontFamily(updatedEditorFont);
+          const updatedTermFont = localStorage.getItem('aura:terminalFontFamily') || 'JetBrains Mono';
+          setTerminalFontFamily(updatedTermFont);
           showToast(msg);
         }}
       />
