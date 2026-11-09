@@ -535,7 +535,7 @@ fn git_get_head_content(workspace: Option<String>, file_path: String) -> Result<
 
 #[tauri::command]
 fn terminal_create(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     cols: u16,
@@ -641,11 +641,47 @@ fn terminal_ready(
     let app_handle = app.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        let mut leftover = Vec::new();
         while let Ok(n) = reader.read(&mut buf) {
             if n == 0 {
                 break;
             }
-            let data = String::from_utf8_lossy(&buf[..n]).to_string();
+            let combined = if leftover.is_empty() {
+                buf[..n].to_vec()
+            } else {
+                let mut c = std::mem::take(&mut leftover);
+                c.extend_from_slice(&buf[..n]);
+                c
+            };
+
+            let mut slice = &combined[..];
+            while !slice.is_empty() {
+                match std::str::from_utf8(slice) {
+                    Ok(valid_str) => {
+                        let _ = app_handle.emit(&format!("terminal:data:{}", event_id), valid_str.to_string());
+                        slice = &[];
+                    }
+                    Err(e) => {
+                        let valid_up_to = e.valid_up_to();
+                        if valid_up_to > 0 {
+                            let valid_str = unsafe { std::str::from_utf8_unchecked(&slice[..valid_up_to]) };
+                            let _ = app_handle.emit(&format!("terminal:data:{}", event_id), valid_str.to_string());
+                        }
+                        if let Some(error_len) = e.error_len() {
+                            let _ = app_handle.emit(&format!("terminal:data:{}", event_id), "\u{FFFD}".to_string());
+                            slice = &slice[valid_up_to + error_len..];
+                        } else {
+                            // Incomplete multi-byte sequence (such as a split Emoji or CJK character) at chunk boundary.
+                            // Retain remaining bytes in leftover buffer to decode with subsequent read chunk.
+                            leftover = slice[valid_up_to..].to_vec();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if !leftover.is_empty() {
+            let data = String::from_utf8_lossy(&leftover).to_string();
             let _ = app_handle.emit(&format!("terminal:data:{}", event_id), data);
         }
         let _ = app_handle.emit(&format!("terminal:exit:{}", event_id), ());

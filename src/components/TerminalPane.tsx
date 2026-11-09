@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { Copy, ClipboardPaste } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import {
@@ -22,13 +23,38 @@ interface TerminalPaneProps {
   autoFocus?: boolean;
   themeId?: string;
   fontSize?: number;
+  fontFamily?: string;
+  isVisible?: boolean;
 }
 
+const DEFAULT_FALLBACK_FONTS = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", monospace';
+
+export const getEffectiveTerminalFont = (customFont?: string) => {
+  if (customFont && customFont.trim()) {
+    const clean = customFont.trim().replace(/^['"]|['"]$/g, '');
+    return `"${clean}", "JetBrains Mono", "Hack Nerd Font", Menlo, Monaco, ${DEFAULT_FALLBACK_FONTS}`;
+  }
+  return `"JetBrains Mono", "Hack Nerd Font Mono", "Hack Nerd Font", Menlo, Monaco, "Courier New", ${DEFAULT_FALLBACK_FONTS}`;
+};
+
 export const TerminalPane = React.memo<TerminalPaneProps>(
-  ({ id, cwd, mode = 'shell', autoFocus = false, themeId, fontSize = 13.5 }) => {
+  ({ id, cwd, mode = 'shell', autoFocus = false, themeId, fontSize = 13.5, fontFamily, isVisible = true }) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermInstance = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+
+    const safeFit = useCallback(() => {
+      if (!fitAddonRef.current || !terminalRef.current) return;
+      const w = terminalRef.current.clientWidth;
+      const h = terminalRef.current.clientHeight;
+      if (w > 20 && h > 20) {
+        try {
+          fitAddonRef.current.fit();
+        } catch (e) {
+          console.error('[Terminal safeFit error]', e);
+        }
+      }
+    }, []);
 
     useEffect(() => {
       if (!terminalRef.current) return;
@@ -50,12 +76,13 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       const isLight = isLightBg(dockBg);
 
       const term = new Terminal({
+        allowProposedApi: true,
         cursorBlink: true,
         cursorStyle: 'block',
         cursorInactiveStyle: 'outline',
         fontSize: fontSize,
-        fontFamily: '"Hack Nerd Font Mono", "Hack Nerd Font", "HackNFM-Regular", "JetBrainsMono Nerd Font", Menlo, monospace',
-        lineHeight: 1.15,
+        fontFamily: getEffectiveTerminalFont(fontFamily),
+        lineHeight: 1.18,
         letterSpacing: 0,
         theme: {
           background: dockBg,
@@ -88,9 +115,22 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
 
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
+
+    try {
+      const unicode11Addon = new Unicode11Addon();
+      term.loadAddon(unicode11Addon);
+      term.unicode.activeVersion = '11';
+    } catch (err) {
+      console.warn('[Unicode11Addon load warning]', err);
+    }
+
+    // Suppress unrequested Device Attributes (DA1 / DA2) responses that leak as ^[[?1;2c into stdout
+    term.parser.registerCsiHandler({ final: 'c' }, () => true);
+    term.parser.registerCsiHandler({ prefix: '>', final: 'c' }, () => true);
+
     term.onBell(() => {});
     term.open(terminalRef.current);
-    fitAddon.fit();
+    safeFit();
 
     xtermInstance.current = term;
     fitAddonRef.current = fitAddon;
@@ -157,7 +197,7 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
             resizeTerminalPTY(id, cols, rows);
           });
 
-          fitAddon.fit();
+          safeFit();
           await createTerminalPTY(id, term.cols || 80, term.rows || 24, cwd, mode);
           await startTerminalReading(id);
         } catch (err: any) {
@@ -168,33 +208,27 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       initTauriPTY();
 
       const focusTimer = setTimeout(() => {
-        if (autoFocus) {
+        if (autoFocus && isVisible) {
           term.focus();
         }
-        if (fitAddonRef.current) fitAddonRef.current.fit();
+        safeFit();
       }, 100);
 
       const handleResize = () => {
-        if (fitAddonRef.current) fitAddonRef.current.fit();
+        safeFit();
       };
       window.addEventListener('resize', handleResize);
 
       let resizeObserver: ResizeObserver | null = null;
       if (typeof ResizeObserver !== 'undefined' && terminalRef.current) {
         resizeObserver = new ResizeObserver(() => {
-          if (fitAddonRef.current && terminalRef.current && terminalRef.current.clientHeight > 0) {
-            try {
-              fitAddonRef.current.fit();
-            } catch (e) {
-              console.error(e);
-            }
-          }
+          safeFit();
         });
         resizeObserver.observe(terminalRef.current);
       }
 
       setTimeout(() => {
-        if (fitAddonRef.current) fitAddonRef.current.fit();
+        safeFit();
       }, 300);
 
       return () => {
@@ -336,10 +370,26 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     useEffect(() => {
       if (!xtermInstance.current) return;
       xtermInstance.current.options.fontSize = fontSize;
-      try {
-        fitAddonRef.current?.fit();
-      } catch (e) {}
-    }, [fontSize]);
+      safeFit();
+    }, [fontSize, safeFit]);
+
+    useEffect(() => {
+      if (!xtermInstance.current) return;
+      xtermInstance.current.options.fontFamily = getEffectiveTerminalFont(fontFamily);
+      safeFit();
+    }, [fontFamily, safeFit]);
+
+    useEffect(() => {
+      if (isVisible) {
+        const timer = setTimeout(() => {
+          safeFit();
+          if (autoFocus) {
+            xtermInstance.current?.focus();
+          }
+        }, 60);
+        return () => clearTimeout(timer);
+      }
+    }, [isVisible, autoFocus, safeFit]);
 
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -402,7 +452,12 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
           }
         }}
         ref={terminalRef}
-        style={{ backgroundColor: 'var(--aura-dock-bg, #181818)' }}
+        style={{
+          backgroundColor: 'var(--aura-dock-bg, #181818)',
+          WebkitFontSmoothing: 'antialiased',
+          MozOsxFontSmoothing: 'grayscale',
+          textRendering: 'optimizeLegibility',
+        }}
         className="h-full w-full p-1.5 overflow-hidden cursor-text relative"
       >
         {contextMenu && (
@@ -451,7 +506,9 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       prevProps.mode === nextProps.mode &&
       prevProps.autoFocus === nextProps.autoFocus &&
       prevProps.themeId === nextProps.themeId &&
-      prevProps.fontSize === nextProps.fontSize
+      prevProps.fontSize === nextProps.fontSize &&
+      prevProps.fontFamily === nextProps.fontFamily &&
+      prevProps.isVisible === nextProps.isVisible
     );
   }
 );
