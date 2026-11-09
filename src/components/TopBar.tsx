@@ -1,7 +1,8 @@
-import React from 'react';
-import { Settings, Bot, Terminal } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Settings, Bot, Terminal, ChevronDown } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { isTauri, startWindowDragging } from '../services/fileService';
+import { isTauri, startWindowDragging, DetectedAgent } from '../services/fileService';
+import { AgentDropdownMenu } from './AgentDropdownMenu';
 
 interface TopBarProps {
   activeView: 'files' | 'git' | 'plugins';
@@ -9,6 +10,8 @@ interface TopBarProps {
   isBottomOpen: boolean;
   onChangeView: (view: 'files' | 'git' | 'plugins') => void;
   onOpenOpenCode: () => void;
+  onSelectAgent: (agent: DetectedAgent) => void;
+  onRunInstallCommand: (installCmd: string, agentName: string) => void;
   onToggleBottom: () => void;
   onOpenSettings: () => void;
 }
@@ -19,9 +22,13 @@ export const TopBar: React.FC<TopBarProps> = ({
   isBottomOpen,
   onChangeView,
   onOpenOpenCode,
+  onSelectAgent,
+  onRunInstallCommand,
   onToggleBottom,
   onOpenSettings,
 }) => {
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+  const agentDropdownRef = useRef<HTMLDivElement>(null);
   const handleDragMouseDown = (e: React.MouseEvent) => {
     if (e.button === 0 && isTauri) {
       const target = e.target as HTMLElement;
@@ -82,16 +89,41 @@ export const TopBar: React.FC<TopBarProps> = ({
         )}
       </div>
 
-      {/* Right side: Global Actions (Robot -> OpenCode, Terminal -> Toggle Dock, Settings) */}
+      {/* Right side: Global Actions (Robot Dropdown -> Agents, Terminal -> Toggle Dock, Settings) */}
       <div data-tauri-no-drag className="flex items-center gap-1">
-        <button
-          data-tauri-no-drag
-          onClick={onOpenOpenCode}
-          title="在3号窗口打开 OpenCode 对话 (Shift+⌘+M)"
-          className="p-1.5 rounded-lg text-[var(--aura-text-muted)] hover:text-[var(--aura-accent,#007acc)] hover:bg-black/5 dark:hover:bg-white/10 active:scale-[0.96] transition-all"
-        >
-          <Bot size={16} />
-        </button>
+        <div className="relative" ref={agentDropdownRef} data-tauri-no-drag>
+          <button
+            data-tauri-no-drag
+            onClick={() => setIsAgentMenuOpen((prev) => !prev)}
+            title="Select AI Agent (Container 3 / Shift+⌘+M)"
+            style={{
+              backgroundColor: isAgentMenuOpen ? 'var(--aura-accent-hover, rgba(0, 122, 204, 0.15))' : 'transparent',
+              color: isAgentMenuOpen ? 'var(--aura-accent, #007acc)' : 'var(--aura-text-muted)',
+            }}
+            className="p-1.5 rounded-lg flex items-center gap-1 text-[var(--aura-text-muted)] hover:text-[var(--aura-accent,#007acc)] hover:bg-black/5 dark:hover:bg-white/10 active:scale-[0.96] transition-all"
+          >
+            <Bot size={16} />
+            <ChevronDown
+              size={11}
+              className={`transition-transform duration-200 ${isAgentMenuOpen ? 'rotate-180' : 'opacity-60'}`}
+            />
+          </button>
+
+          {isAgentMenuOpen && (
+            <AgentDropdownMenu
+              isOpen={isAgentMenuOpen}
+              onClose={() => setIsAgentMenuOpen(false)}
+              onSelectAgent={(agent) => {
+                setIsAgentMenuOpen(false);
+                onSelectAgent(agent);
+              }}
+              onRunInstall={(cmd, name) => {
+                setIsAgentMenuOpen(false);
+                onRunInstallCommand(cmd, name);
+              }}
+            />
+          )}
+        </div>
 
         <button
           data-tauri-no-drag

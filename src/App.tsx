@@ -30,8 +30,10 @@ import {
   watchWorkspaceFS,
   isTauri,
   exitApp,
+  DetectedAgent,
 } from './services/fileService';
 import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check, Move } from 'lucide-react';
+import { OpenCodeLogo, AntigravityLogo, CodexLogo, ClaudeLogo } from './components/AgentDropdownMenu';
 
 import { SupportedLang, getInitialLanguage, translations } from './services/i18n';
 import { getThemeById, applyThemeToDocument } from './services/themeService';
@@ -234,7 +236,6 @@ const BottomDockArea = React.memo<BottomDockProps>(({
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {bottomTabs.map((bt) => {
               const isCur = activeBottomTabId === bt.id;
-              const Icon = bt.type === 'terminal' ? Terminal : Bot;
               const isRenaming = editingDockTabId === bt.id;
               return (
                 <div
@@ -254,10 +255,19 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                       : 'hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-[#2e2e2e]'
                   }`}
                 >
-                  <Icon
-                    size={13}
-                    className={bt.type === 'terminal' ? 'text-green-400' : 'text-[#007acc]'}
-                  />
+                  {bt.type === 'terminal' ? (
+                    <Terminal size={13} className="text-emerald-400" />
+                  ) : bt.agentCommand === 'agy' ? (
+                    <AntigravityLogo size={14} />
+                  ) : bt.agentCommand === 'codex' ? (
+                    <CodexLogo size={14} />
+                  ) : bt.agentCommand === 'claude' ? (
+                    <ClaudeLogo size={14} />
+                  ) : bt.agentCommand === 'opencode' || bt.type === 'opencode' ? (
+                    <OpenCodeLogo size={14} />
+                  ) : (
+                    <Bot size={13} className="text-[var(--aura-accent,#007acc)]" />
+                  )}
                   {isRenaming ? (
                     <input
                       ref={dockRenameInputRef}
@@ -366,7 +376,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                     <TerminalPane
                       id={leaf.id}
                       cwd={workspaceDir || undefined}
-                      mode={bt.type === 'terminal' ? 'shell' : 'opencode'}
+                      mode={bt.type === 'terminal' ? 'shell' : (bt.agentCommand || bt.type)}
                       themeId={themeId}
                       fontSize={fontSize}
                       fontFamily={fontFamily}
@@ -1110,6 +1120,38 @@ export function App() {
     focusActiveTerminal(id);
   };
 
+  const handleLaunchAgent = useCallback((agent: DetectedAgent) => {
+    setIsBottomOpen(true);
+    const count = bottomTabsRef.current.filter((t) => t.agentCommand === agent.command || (t.type === 'opencode' && agent.command === 'opencode')).length;
+    const id = `agent-${agent.id}-${Date.now()}`;
+    const title = count === 0 ? agent.name : `${agent.name} ${count + 1}`;
+    const newBottomTab: BottomTab = {
+      id,
+      type: 'agent',
+      title,
+      agentCommand: agent.command,
+    };
+    setBottomTabs((prev) => [...prev, newBottomTab]);
+    setActiveBottomTabId(id);
+    focusActiveTerminal(id);
+  }, [focusActiveTerminal]);
+
+  const handleRunInstallCommand = useCallback((installCmd: string, agentName: string) => {
+    setIsBottomOpen(true);
+    const id = `install-${Date.now()}`;
+    const title = `Install ${agentName}`;
+    const newBottomTab: BottomTab = {
+      id,
+      type: 'terminal',
+      title,
+    };
+    setBottomTabs((prev) => [...prev, newBottomTab]);
+    setActiveBottomTabId(id);
+    setTimeout(() => {
+      writeTerminalPTY(id, `${installCmd}\n`);
+    }, 450);
+  }, []);
+
   const handleCloseActiveBottomTab = () => {
     const curTabId = activeBottomTabIdRef.current;
     if (!curTabId) return;
@@ -1503,6 +1545,8 @@ export function App() {
         isBottomOpen={isBottomOpen}
         onChangeView={setActiveView}
         onOpenOpenCode={handleOpenOpenCodeTab}
+        onSelectAgent={handleLaunchAgent}
+        onRunInstallCommand={handleRunInstallCommand}
         onToggleBottom={handleToggleTerminalBottom}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />

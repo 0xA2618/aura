@@ -19,7 +19,7 @@ import {
 interface TerminalPaneProps {
   id: string;
   cwd?: string;
-  mode?: 'shell' | 'opencode';
+  mode?: 'shell' | 'opencode' | string;
   autoFocus?: boolean;
   themeId?: string;
   fontSize?: number;

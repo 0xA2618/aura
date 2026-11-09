@@ -531,6 +531,122 @@ fn git_get_head_content(workspace: Option<String>, file_path: String) -> Result<
     }
 }
 
+// ----------------- Native Agent Detection & Resolution -----------------
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct DetectedAgent {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub description: String,
+    pub category: String,
+    pub is_installed: bool,
+    pub install_command: String,
+    pub path: Option<String>,
+}
+
+fn resolve_candidate_path(cmd_name: &str) -> Option<PathBuf> {
+    let direct_path = PathBuf::from(cmd_name);
+    if direct_path.is_file() {
+        return Some(direct_path);
+    }
+
+    let mut check_dirs = Vec::new();
+    if let Ok(home) = std::env::var("HOME") {
+        check_dirs.push(PathBuf::from(&home).join(".local/bin"));
+        check_dirs.push(PathBuf::from(&home).join(".cargo/bin"));
+        check_dirs.push(PathBuf::from(&home).join(".opencode/bin"));
+        check_dirs.push(PathBuf::from(&home).join(".gemini/antigravity-cli/bin"));
+        check_dirs.push(PathBuf::from(&home).join(".gemini/bin"));
+    }
+    check_dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    check_dirs.push(PathBuf::from("/usr/local/bin"));
+    check_dirs.push(PathBuf::from("/usr/bin"));
+    check_dirs.push(PathBuf::from("/bin"));
+
+    if let Ok(path_var) = std::env::var("PATH") {
+        for p in std::env::split_paths(&path_var) {
+            check_dirs.push(p);
+        }
+    }
+
+    for dir in check_dirs {
+        let candidate = dir.join(cmd_name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        #[cfg(windows)]
+        {
+            let exe_candidate = dir.join(format!("{}.exe", cmd_name));
+            if exe_candidate.is_file() {
+                return Some(exe_candidate);
+            }
+            let cmd_candidate = dir.join(format!("{}.cmd", cmd_name));
+            if cmd_candidate.is_file() {
+                return Some(cmd_candidate);
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+fn system_detect_agents() -> Result<Vec<DetectedAgent>, String> {
+    let preset_agents = vec![
+        (
+            "opencode",
+            "OpenCode Agent",
+            "opencode",
+            "OpenCode CLI autonomous coding agent",
+            "coding",
+            "npm install -g @opencode/cli || brew install opencode",
+        ),
+        (
+            "agy",
+            "Antigravity Agent (AGY)",
+            "agy",
+            "Google Antigravity CLI advanced agentic coding",
+            "research",
+            "npm install -g @google/antigravity-cli",
+        ),
+        (
+            "codex",
+            "Codex Agent",
+            "codex",
+            "OpenAI Codex CLI developer terminal assistant",
+            "terminal",
+            "npm install -g @openai/codex",
+        ),
+        (
+            "claude",
+            "Claude Code",
+            "claude",
+            "Anthropic Claude Code command line agent",
+            "coding",
+            "npm install -g @anthropic-ai/claude-code",
+        ),
+    ];
+
+    let mut list = Vec::new();
+    for (id, name, command, description, category, install_command) in preset_agents {
+        let maybe_path = resolve_candidate_path(command);
+        let is_installed = maybe_path.is_some();
+        list.push(DetectedAgent {
+            id: id.to_string(),
+            name: name.to_string(),
+            command: command.to_string(),
+            description: description.to_string(),
+            category: category.to_string(),
+            is_installed,
+            install_command: install_command.to_string(),
+            path: maybe_path.map(|p| p.to_string_lossy().to_string()),
+        });
+    }
+
+    Ok(list)
+}
+
 // ----------------- Native Terminal PTY Commands -----------------
 
 #[tauri::command]
@@ -580,24 +696,26 @@ fn terminal_create(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
 
-    let is_opencode = mode.as_deref() == Some("opencode");
-    if is_opencode {
-        let opencode_path = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .map(|h| format!("{}/.opencode/bin/opencode", h))
-            .unwrap_or_default();
-        let bin = if Path::new(&opencode_path).exists() {
-            opencode_path
+    let agent_cmd_opt = match mode.as_deref() {
+        Some("shell") | None => None,
+        Some(m) if m.starts_with("agent:") => Some(m.trim_start_matches("agent:")),
+        Some(m) => Some(m),
+    };
+
+    if let Some(agent_cmd) = agent_cmd_opt {
+        let bin_string = if let Some(found_path) = resolve_candidate_path(agent_cmd) {
+            found_path.to_string_lossy().to_string()
         } else {
-            "opencode".to_string()
+            agent_cmd.to_string()
         };
+
         if cfg!(windows) {
             cmd.arg("-Command");
-            cmd.arg(format!("Set-Location '{}'; & '{}'", resolved_cwd.to_string_lossy(), bin));
+            cmd.arg(format!("Set-Location '{}'; & '{}'", resolved_cwd.to_string_lossy(), bin_string));
         } else {
             cmd.arg("-l");
             cmd.arg("-c");
-            cmd.arg(format!("cd '{}' && exec {}", resolved_cwd.to_string_lossy(), bin));
+            cmd.arg(format!("cd '{}' && exec {}", resolved_cwd.to_string_lossy(), bin_string));
         }
     } else if !cfg!(windows) {
         cmd.arg("-l");
@@ -847,6 +965,7 @@ pub fn run() {
             git_get_commit_files,
             git_get_file_diff,
             git_get_head_content,
+            system_detect_agents,
             terminal_create,
             terminal_ready,
             terminal_write,

@@ -30,7 +30,7 @@ export interface OpenTab {
   extensionData?: PluginManifest;
 }
 
-export type BottomTabType = 'terminal' | 'opencode';
+export type BottomTabType = 'terminal' | 'opencode' | 'agent';
 
 export type PaneSplitDirection = 'horizontal' | 'vertical'; // horizontal = side-by-side (left/right, Cmd+D), vertical = stacked (top/bottom, Shift+Cmd+D)
 
@@ -50,6 +50,7 @@ export interface BottomTab {
   id: string;
   type: BottomTabType;
   title: string;
+  agentCommand?: string;
   rootLayout?: PaneLayoutNode;
 }
 

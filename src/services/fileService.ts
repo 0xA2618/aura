@@ -495,6 +495,70 @@ export async function fetchCommitFileDiff(hash: string, filePath: string, repoPa
   return { original: '', modified: '' };
 }
 
+// System AI Agent Detection
+export interface DetectedAgent {
+  id: string;
+  name: string;
+  command: string;
+  description: string;
+  category: string;
+  is_installed: boolean;
+  install_command: string;
+  path?: string | null;
+}
+
+export async function detectSystemAgents(): Promise<DetectedAgent[]> {
+  if (isTauri) {
+    try {
+      return await invoke<DetectedAgent[]>('system_detect_agents');
+    } catch (e) {
+      console.error('[detectSystemAgents error]', e);
+    }
+  }
+  return [
+    {
+      id: 'opencode',
+      name: 'OpenCode Agent',
+      command: 'opencode',
+      description: 'OpenCode CLI autonomous coding agent',
+      category: 'coding',
+      is_installed: true,
+      install_command: 'npm install -g @opencode/cli || brew install opencode',
+      path: '/opt/homebrew/bin/opencode',
+    },
+    {
+      id: 'agy',
+      name: 'Antigravity Agent (AGY)',
+      command: 'agy',
+      description: 'Google Antigravity CLI advanced agentic coding',
+      category: 'research',
+      is_installed: true,
+      install_command: 'npm install -g @google/antigravity-cli',
+      path: '/Users/Yang/.local/bin/agy',
+    },
+    {
+      id: 'codex',
+      name: 'Codex Agent',
+      command: 'codex',
+      description: 'OpenAI Codex CLI developer terminal assistant',
+      category: 'terminal',
+      is_installed: true,
+      install_command: 'npm install -g @openai/codex',
+      path: '/opt/homebrew/bin/codex',
+    },
+    {
+      id: 'claude',
+      name: 'Claude Code',
+      command: 'claude',
+      description: 'Anthropic Claude Code command line agent',
+      category: 'coding',
+      is_installed: true,
+      install_command: 'npm install -g @anthropic-ai/claude-code',
+      path: '/Users/Yang/.local/bin/claude',
+    },
+  ];
+}
+
 // Rust Backend Terminal PTY Wrappers
 export async function createTerminalPTY(
   id: string,
