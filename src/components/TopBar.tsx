@@ -12,6 +12,7 @@ interface TopBarProps {
   onOpenOpenCode: () => void;
   onSelectAgent: (agent: DetectedAgent) => void;
   onRunInstallCommand: (installCmd: string, agentName: string) => void;
+  onOpenAddAgentModal: () => void;
   onToggleBottom: () => void;
   onOpenSettings: () => void;
 }
@@ -24,6 +25,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenOpenCode,
   onSelectAgent,
   onRunInstallCommand,
+  onOpenAddAgentModal,
   onToggleBottom,
   onOpenSettings,
 }) => {
@@ -121,6 +123,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 setIsAgentMenuOpen(false);
                 onRunInstallCommand(cmd, name);
               }}
+              onOpenAddModal={onOpenAddAgentModal}
               onOpenSettings={onOpenSettings}
             />
           )}

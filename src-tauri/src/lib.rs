@@ -647,6 +647,96 @@ fn system_detect_agents() -> Result<Vec<DetectedAgent>, String> {
     Ok(list)
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct ScannedBinItem {
+    pub name: String,
+    pub path: String,
+    pub is_executable: bool,
+}
+
+#[tauri::command]
+fn system_scan_local_bin() -> Result<Vec<ScannedBinItem>, String> {
+    let mut items = Vec::new();
+    if let Ok(home) = std::env::var("HOME") {
+        let local_bin = PathBuf::from(home).join(".local/bin");
+        if local_bin.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(local_bin) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() || path.is_symlink() {
+                        let file_name = entry.file_name().to_string_lossy().to_string();
+                        if file_name.starts_with('.') || file_name.ends_with('~') || file_name.ends_with(".bak") {
+                            continue;
+                        }
+                        #[cfg(unix)]
+                        let is_executable = {
+                            use std::os::unix::fs::PermissionsExt;
+                            entry.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+                        };
+                        #[cfg(not(unix))]
+                        let is_executable = true;
+
+                        items.push(ScannedBinItem {
+                            name: file_name,
+                            path: path.to_string_lossy().to_string(),
+                            is_executable,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(items)
+}
+
+#[tauri::command]
+fn system_register_custom_agent(name: String, raw_path: String) -> Result<DetectedAgent, String> {
+    let clean_path = raw_path.trim();
+    if clean_path.is_empty() {
+        return Err("Agent path cannot be empty".to_string());
+    }
+
+    let expanded_path_str = if clean_path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            clean_path.replacen('~', &home, 1)
+        } else {
+            clean_path.to_string()
+        }
+    } else {
+        clean_path.to_string()
+    };
+
+    let target_path = PathBuf::from(&expanded_path_str);
+
+    if target_path.is_file() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&target_path) {
+                let mut perms = meta.permissions();
+                let current_mode = perms.mode();
+                if current_mode & 0o111 == 0 {
+                    perms.set_mode(current_mode | 0o755);
+                    let _ = std::fs::set_permissions(&target_path, perms);
+                }
+            }
+        }
+    }
+
+    let agent_id = format!("custom-{}", name.to_lowercase().replace(' ', "-"));
+    Ok(DetectedAgent {
+        id: agent_id,
+        name: name.clone(),
+        command: expanded_path_str.clone(),
+        description: format!("Custom Agent: {}", name),
+        category: "custom".to_string(),
+        is_installed: true,
+        install_command: String::new(),
+        path: Some(expanded_path_str),
+    })
+}
+
 // ----------------- Native Terminal PTY Commands -----------------
 
 #[tauri::command]
@@ -966,6 +1056,8 @@ pub fn run() {
             git_get_file_diff,
             git_get_head_content,
             system_detect_agents,
+            system_scan_local_bin,
+            system_register_custom_agent,
             terminal_create,
             terminal_ready,
             terminal_write,

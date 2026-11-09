@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Download } from 'lucide-react';
+import { Plus, Download, Terminal, Bot } from 'lucide-react';
 import { DetectedAgent, detectSystemAgents } from '../services/fileService';
 
 // Exact minimal monochrome icons matching user screenshot
@@ -40,6 +40,7 @@ interface AgentDropdownMenuProps {
   onClose: () => void;
   onSelectAgent: (agent: DetectedAgent) => void;
   onRunInstall: (installCmd: string, agentName: string) => void;
+  onOpenAddModal?: () => void;
   onOpenSettings?: () => void;
 }
 
@@ -48,6 +49,7 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
   onClose,
   onSelectAgent,
   onRunInstall,
+  onOpenAddModal,
   onOpenSettings,
 }) => {
   const [agents, setAgents] = useState<DetectedAgent[]>([]);
@@ -56,12 +58,33 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
   const fetchAgents = async () => {
     try {
       const data = await detectSystemAgents();
-      // Ensure specific ordering matching screenshot: Claude Agent, Codex, Google Antigravity, OpenCode V2
+      // Load custom agents from localStorage
+      let customAgents: DetectedAgent[] = [];
+      try {
+        const raw = localStorage.getItem('aura_custom_agents');
+        if (raw) {
+          customAgents = JSON.parse(raw);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      const combined = [...data];
+      for (const ca of customAgents) {
+        if (!combined.some((a) => a.id === ca.id)) {
+          combined.push(ca);
+        }
+      }
+
+      // Ensure ordering: Claude Agent, Codex, Google Antigravity, OpenCode V2, then custom
       const order = ['claude', 'codex', 'agy', 'opencode'];
-      const sorted = [...data].sort((a, b) => {
+      const sorted = combined.sort((a, b) => {
         const idxA = order.indexOf(a.id);
         const idxB = order.indexOf(b.id);
-        return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.name.localeCompare(b.name);
       });
       setAgents(sorted);
     } catch (err) {
@@ -104,15 +127,15 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
   const renderIcon = (id: string) => {
     switch (id) {
       case 'claude':
-        return <ClaudeIcon size={17} className="text-[#dcdfe4] shrink-0" />;
+        return <ClaudeIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
       case 'codex':
-        return <CodexIcon size={17} className="text-[#dcdfe4] shrink-0" />;
+        return <CodexIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
       case 'agy':
-        return <AntigravityIcon size={17} className="text-[#dcdfe4] shrink-0" />;
+        return <AntigravityIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
       case 'opencode':
-        return <OpenCodeIcon size={16} className="text-[#dcdfe4] shrink-0" />;
+        return <OpenCodeIcon size={16} className="text-[var(--aura-text)] shrink-0" />;
       default:
-        return <OpenCodeIcon size={16} className="text-[#dcdfe4] shrink-0" />;
+        return <Terminal size={16} className="text-[var(--aura-text)] shrink-0" />;
     }
   };
 
@@ -144,11 +167,12 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
       ref={menuRef}
       data-tauri-no-drag
       style={{
-        backgroundColor: '#1e222b',
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'var(--aura-bg-elevated, #252526)',
+        borderColor: 'var(--aura-border, rgba(125, 125, 125, 0.25))',
+        color: 'var(--aura-text, #cccccc)',
         boxShadow: '0 12px 32px -4px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.4)',
       }}
-      className="absolute right-0 top-full mt-1.5 w-[240px] rounded-xl border z-[100] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 font-sans p-1.5"
+      className="absolute right-0 top-full mt-1.5 w-[250px] rounded-xl border z-[100] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 font-sans p-1.5"
     >
       {/* Agents List */}
       <div className="space-y-0.5">
@@ -160,7 +184,7 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
             <div
               key={agent.id}
               onClick={() => handleAgentClick(agent)}
-              className="flex items-center justify-between px-2.5 py-2 rounded-lg text-[14px] text-[#f0f2f5] hover:bg-white/[0.08] active:bg-white/[0.12] transition-colors cursor-pointer group"
+              className="flex items-center justify-between px-2.5 py-2 rounded-lg text-[13.5px] text-[var(--aura-text,#ffffff)] hover:bg-black/5 dark:hover:bg-white/[0.08] active:bg-black/10 dark:active:bg-white/[0.12] transition-colors cursor-pointer group"
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="opacity-90 group-hover:opacity-100 transition-opacity">
@@ -175,7 +199,7 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
               <div className="shrink-0 flex items-center">
                 {agent.is_installed ? (
                   isOpencode ? (
-                    <span className="text-[12px] text-[#8c93a0] font-sans font-normal tracking-wide">
+                    <span className="text-[12px] text-[var(--aura-text-muted,#8c93a0)] font-sans font-normal tracking-wide">
                       ⌘ N
                     </span>
                   ) : null
@@ -199,18 +223,22 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
       </div>
 
       {/* Divider */}
-      <div className="my-1 border-t border-white/[0.08]" />
+      <div className="my-1 border-t border-[var(--aura-border,rgba(125,125,125,0.15))]" />
 
       {/* Add More Agents */}
-      <div className="px-1.5 pb-1.5">
+      <div>
         <button
           onClick={() => {
             onClose();
-            if (onOpenSettings) onOpenSettings();
+            if (onOpenAddModal) {
+              onOpenAddModal();
+            } else if (onOpenSettings) {
+              onOpenSettings();
+            }
           }}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[14px] text-[#dcdfe4] hover:bg-white/[0.08] active:bg-white/[0.12] transition-colors text-left"
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] text-[var(--aura-text-muted,#8c93a0)] hover:text-[var(--aura-text,#ffffff)] hover:bg-black/5 dark:hover:bg-white/[0.08] active:bg-black/10 dark:active:bg-white/[0.12] transition-colors text-left"
         >
-          <Plus size={16} className="text-[#8c93a0]" />
+          <Plus size={16} className="text-[var(--aura-text-muted,#8c93a0)]" />
           <span className="font-normal tracking-tight">Add More Agents</span>
         </button>
       </div>

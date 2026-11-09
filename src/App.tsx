@@ -7,6 +7,7 @@ import { OpenCodeChat } from './components/OpenCodeChat';
 import { QuickPicker } from './components/QuickPicker';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
+import { AddAgentModal } from './components/AddAgentModal';
 import {
   FileItem,
   OpenTab,
@@ -483,6 +484,7 @@ export function App() {
 
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -1547,6 +1549,7 @@ export function App() {
         onOpenOpenCode={handleOpenOpenCodeTab}
         onSelectAgent={handleLaunchAgent}
         onRunInstallCommand={handleRunInstallCommand}
+        onOpenAddAgentModal={() => setIsAddAgentModalOpen(true)}
         onToggleBottom={handleToggleTerminalBottom}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
@@ -1727,6 +1730,12 @@ export function App() {
       <HelpModal
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
+      />
+
+      <AddAgentModal
+        isOpen={isAddAgentModalOpen}
+        onClose={() => setIsAddAgentModalOpen(false)}
+        onAgentAdded={(agent) => handleLaunchAgent(agent)}
       />
 
       {/* Floating in-app Toast Notification */}

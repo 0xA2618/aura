@@ -559,6 +559,44 @@ export async function detectSystemAgents(): Promise<DetectedAgent[]> {
   ];
 }
 
+export interface ScannedBinItem {
+  name: string;
+  path: string;
+  is_executable: boolean;
+}
+
+export async function scanLocalBin(): Promise<ScannedBinItem[]> {
+  if (isTauri) {
+    try {
+      return await invoke<ScannedBinItem[]>('system_scan_local_bin');
+    } catch (e) {
+      console.error('[scanLocalBin error]', e);
+    }
+  }
+  return [];
+}
+
+export async function registerCustomAgent(name: string, rawPath: string): Promise<DetectedAgent | null> {
+  if (isTauri) {
+    try {
+      return await invoke<DetectedAgent>('system_register_custom_agent', { name, rawPath });
+    } catch (e) {
+      console.error('[registerCustomAgent error]', e);
+      throw e;
+    }
+  }
+  return {
+    id: `custom-${Date.now()}`,
+    name,
+    command: rawPath,
+    description: `Custom Agent: ${name}`,
+    category: 'custom',
+    is_installed: true,
+    install_command: '',
+    path: rawPath,
+  };
+}
+
 // Rust Backend Terminal PTY Wrappers
 export async function createTerminalPTY(
   id: string,
