@@ -48,28 +48,100 @@ html, body, #root {
 
 .aura-git-gutter-added {
   border-left: 3px solid #2ea043 !important;
-  margin-left: 3px;
+  margin-left: 2px;
+  position: relative;
+}
+
+.aura-git-gutter-added::before {
+  content: '+';
+  color: #2ea043;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.aura-git-line-added {
+  background-color: rgba(46, 160, 67, 0.16) !important;
 }
 
 .aura-git-gutter-modified {
   border-left: 3px solid #e3b341 !important;
-  margin-left: 3px;
-}
-
-.aura-git-gutter-deleted {
+  margin-left: 2px;
   position: relative;
 }
 
-.aura-git-gutter-deleted::after {
-  content: '';
+.aura-git-gutter-modified::before {
+  content: '~';
+  color: #e3b341;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
   position: absolute;
   left: 3px;
-  bottom: 0px;
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 5px solid #f85149;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.aura-git-line-modified {
+  background-color: rgba(227, 179, 65, 0.14) !important;
+}
+
+.aura-git-gutter-deleted {
+  border-left: 3px solid #f85149 !important;
+  margin-left: 2px;
+  position: relative;
+}
+
+.aura-git-gutter-deleted::before {
+  content: '-';
+  color: #f85149;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.aura-git-line-deleted {
+  background-color: rgba(248, 81, 73, 0.16) !important;
+  border-top: 2px solid #f85149 !important;
+}
+
+.aura-diff-diagonal-spacer {
+  width: 100%;
+  height: 100%;
+  background-image: linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.05) 12.5%,
+    transparent 12.5%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.05) 62.5%,
+    transparent 62.5%,
+    transparent 100%
+  );
+  background-size: 8px 8px;
+  pointer-events: none;
+}
+
+/* Suppress red squiggly error / warning wavy lines in Monaco editor & diff views */
+.monaco-editor .squiggly-error,
+.monaco-editor .squiggly-warning,
+.monaco-editor .squiggly-info,
+.monaco-editor .squiggly-hint,
+.monaco-diff-editor .squiggly-error,
+.monaco-diff-editor .squiggly-warning,
+.monaco-diff-editor .squiggly-info,
+.monaco-diff-editor .squiggly-hint {
+  background: none !important;
+  background-image: none !important;
+  border-bottom: none !important;
 }
 
 /* Crisp rendering & Subpixel antialiasing for external monitors & Retina */

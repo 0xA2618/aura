@@ -8,12 +8,16 @@ import {
   searchOpenVsxMarketplace,
   fetchCommitChangedFiles,
   fetchGitStatus,
+  DetectedAgent,
 } from '../services/fileService';
 import {
   FileCode,
   FileText,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
+  FolderGit2,
+  Folder,
   GitBranch,
   GitCommit as GitCommitIcon,
   Puzzle,
@@ -28,7 +32,6 @@ import {
   RotateCw,
   Download,
   Star,
-  PanelLeftClose,
   CheckCircle2,
   ExternalLink,
   ShieldCheck,
@@ -39,12 +42,28 @@ import {
   GitPullRequest,
   History,
   FileDiff,
+  Bot,
+  X,
+  Edit3,
 } from 'lucide-react';
 import { PLUGIN_LOGOS } from '../services/pluginLogos';
 import { FileIcon } from './FileIcon';
+import { ClaudeIcon, CodexIcon, AntigravityIcon, OpenCodeIcon, AgentDropdownMenu } from './AgentDropdownMenu';
 import { computeVSCodeHistoryViewModels, HistoryItemViewModel, SWIMLANE_WIDTH, SWIMLANE_HEIGHT } from '../services/gitTopology';
 
 import { SupportedLang, translations } from '../services/i18n';
+
+export interface AgentSessionItem {
+  id: string;
+  title: string;
+  agentName: string;
+  agentCommand?: string;
+  agentId?: string;
+  isActive?: boolean;
+  createdAt?: number;
+  projectPath?: string;
+  projectName?: string;
+}
 
 interface SidebarProps {
   files: FileItem[];
@@ -52,8 +71,12 @@ interface SidebarProps {
   plugins: PluginManifest[];
   activeView: 'files' | 'git' | 'plugins';
   workspaceDir: string;
+  agentSessions?: AgentSessionItem[];
+  sidebarWidth?: number;
+  onSetSidebarWidth?: (w: number) => void;
   lang?: SupportedLang;
   fontSize?: number;
+  fontFamily?: string;
   isFocused?: boolean;
   onSelectFile: (file: FileItem, viewMode?: 'editor' | 'markdown-preview' | 'markmap' | 'outline') => void;
   onOpenDiff?: (commitHash: string, filePath: string) => void;
@@ -62,9 +85,19 @@ interface SidebarProps {
   onUninstallPlugin?: (id: string) => void;
   onSelectExtension?: (extension: PluginManifest) => void;
   onChangeView: (view: 'files' | 'git' | 'plugins') => void;
-  onChangeWorkspaceDir: () => void;
+  onChangeWorkspaceDir?: () => void;
   onRefreshWorkspace: () => void;
   onCollapseSidebar?: () => void;
+  onSelectSession?: (session: AgentSessionItem) => void;
+  onCloseSession?: (sessionId: string) => void;
+  onRenameSession?: (sessionId: string, newTitle: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
+  onNewAgentSession?: () => void;
+  onSelectAgent?: (agent: DetectedAgent) => void;
+  onRunInstallCommand?: (installCmd: string, agentName: string) => void;
+  onOpenAddAgentModal?: () => void;
+  onOpenSettings?: () => void;
+  onSelectProject?: (projectDir: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -73,8 +106,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   plugins,
   activeView,
   workspaceDir,
+  agentSessions = [],
+  sidebarWidth = 260,
+  onSetSidebarWidth,
   lang = 'zh-CN',
   fontSize = 14,
+  fontFamily,
   isFocused = false,
   onSelectFile,
   onOpenDiff,
@@ -86,6 +123,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeWorkspaceDir,
   onRefreshWorkspace,
   onCollapseSidebar,
+  onSelectSession,
+  onCloseSession,
+  onRenameSession,
+  onDeleteSession,
+  onNewAgentSession,
+  onSelectAgent,
+  onRunInstallCommand,
+  onOpenAddAgentModal,
+  onOpenSettings,
+  onSelectProject,
 }) => {
   const t = translations[lang];
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
@@ -99,6 +146,263 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return localStorage.getItem('aura:disableMoveConfirm') === 'true';
   });
   const [doNotAskAgainChecked, setDoNotAskAgainChecked] = useState(false);
+
+  const [isSessionsExpanded, setIsSessionsExpanded] = useState<boolean>(() => {
+    return localStorage.getItem('aura:sidebarSessionsExpanded') !== 'false';
+  });
+  const [isDirExpanded, setIsDirExpanded] = useState<boolean>(() => {
+    return localStorage.getItem('aura:sidebarDirExpanded') !== 'false';
+  });
+  const [isDirDockedBottom, setIsDirDockedBottom] = useState<boolean>(() => {
+    return localStorage.getItem('aura:sidebarDirDockedBottom') === 'true';
+  });
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+
+  const [sessionHeight, setSessionHeight] = useState<number>(() => {
+    const saved = localStorage.getItem('aura:sessionSectionHeight');
+    return saved ? Math.max(100, Math.min(650, Number(saved))) : 220;
+  });
+
+  const isResizingSplitterRef = useRef(false);
+  const splitterStartYRef = useRef(0);
+  const splitterStartHeightRef = useRef(0);
+
+  const handleMouseDownSplitter = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingSplitterRef.current = true;
+    splitterStartYRef.current = e.clientY;
+    splitterStartHeightRef.current = sessionHeight;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isResizingSplitterRef.current) return;
+      const dy = ev.clientY - splitterStartYRef.current;
+      const newH = Math.max(80, Math.min(window.innerHeight - 180, splitterStartHeightRef.current + dy));
+      setSessionHeight(newH);
+      localStorage.setItem('aura:sessionSectionHeight', String(newH));
+    };
+
+    const onMouseUp = () => {
+      isResizingSplitterRef.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const currentProjectName = workspaceDir ? (workspaceDir.split('/').filter(Boolean).pop() || 'Project') : 'Project';
+
+  const [favoriteProjects, setFavoriteProjects] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('aura:favoriteProjects');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [deletedProjects, setDeletedProjects] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('aura:deletedProjects');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Automatically un-hide project when reopened as active workspace
+  useEffect(() => {
+    if (!workspaceDir) return;
+    setDeletedProjects((prev) => {
+      const pName = workspaceDir.split('/').filter(Boolean).pop() || '';
+      const hasMatch = prev.includes(workspaceDir) || (pName && prev.includes(pName));
+      if (!hasMatch) return prev;
+      const next = prev.filter((p) => p !== workspaceDir && p !== pName);
+      localStorage.setItem('aura:deletedProjects', JSON.stringify(next));
+      return next;
+    });
+  }, [workspaceDir]);
+
+  const toggleFavoriteProject = (key: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setFavoriteProjects((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      localStorage.setItem('aura:favoriteProjects', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const normalizePath = (p?: string | null) => {
+    if (!p) return '';
+    return p.trim().replace(/[\\/]+$/, '');
+  };
+
+  const projectGroups = React.useMemo(() => {
+    const groupsMap = new Map<string, { projectPath: string; projectName: string; isCurrent: boolean; sessions: AgentSessionItem[] }>();
+
+    const curPath = normalizePath(workspaceDir);
+    const curName = currentProjectName;
+    const isCurDeleted = (curPath && deletedProjects.includes(curPath)) || (curName && deletedProjects.includes(curName));
+
+    if (curPath && !isCurDeleted) {
+      groupsMap.set(curPath, {
+        projectPath: workspaceDir,
+        projectName: currentProjectName,
+        isCurrent: true,
+        sessions: [],
+      });
+    }
+
+    for (const session of agentSessions) {
+      const rawPath = session.projectPath || '';
+      const normPath = normalizePath(rawPath);
+      const pKey = normPath || session.projectName || 'Other';
+      const pName = session.projectName || (rawPath ? rawPath.split(/[\\/]/).filter(Boolean).pop() || 'Project' : 'Other');
+
+      // Filter out deleted projects
+      if (deletedProjects.includes(pKey) || (normPath && deletedProjects.includes(normPath)) || deletedProjects.includes(pName)) {
+        continue;
+      }
+
+      const mapKey = normPath || pName;
+      if (!groupsMap.has(mapKey)) {
+        groupsMap.set(mapKey, {
+          projectPath: rawPath || pName,
+          projectName: pName,
+          isCurrent: normPath ? normPath === curPath : false,
+          sessions: [],
+        });
+      }
+      const grp = groupsMap.get(mapKey)!;
+      if (!grp.sessions.some((s) => s.id === session.id)) {
+        grp.sessions.push(session);
+      }
+    }
+
+    const list = Array.from(groupsMap.values());
+    list.sort((a, b) => {
+      const aKey = a.projectPath || a.projectName;
+      const bKey = b.projectPath || b.projectName;
+      const aFav = favoriteProjects.includes(aKey) || favoriteProjects.includes(a.projectName);
+      const bFav = favoriteProjects.includes(bKey) || favoriteProjects.includes(b.projectName);
+
+      // 1. Favorited projects pinned to top
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+
+      // 2. Sort by name alphabetically (position does NOT change when clicked)
+      return a.projectName.localeCompare(b.projectName, undefined, { sensitivity: 'base' });
+    });
+    return list;
+  }, [agentSessions, workspaceDir, currentProjectName, favoriteProjects, deletedProjects]);
+
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('aura:collapsedProjects');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleProjectCollapse = (projectPath: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setCollapsedProjects((prev) => {
+      const next = { ...prev, [projectPath]: !prev[projectPath] };
+      localStorage.setItem('aura:collapsedProjects', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleProjectClick = (group: { projectPath: string; projectName: string; isCurrent: boolean }) => {
+    toggleProjectCollapse(group.projectPath);
+    if (group.projectPath && group.projectPath !== workspaceDir && onSelectProject) {
+      onSelectProject(group.projectPath);
+    }
+  };
+
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionTitle, setEditingSessionTitle] = useState('');
+  const [sessionContextMenu, setSessionContextMenu] = useState<{
+    x: number;
+    y: number;
+    session: AgentSessionItem;
+  } | null>(null);
+  const [sessionToDelete, setSessionToDelete] = useState<AgentSessionItem | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<{ projectPath: string; projectName: string } | null>(null);
+
+  const handleConfirmDeleteProject = (group: { projectPath: string; projectName: string }) => {
+    const key = group.projectPath || group.projectName;
+    setDeletedProjects((prev) => {
+      const next = prev.includes(key) ? prev : [...prev, key, group.projectName];
+      localStorage.setItem('aura:deletedProjects', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!projectToDelete) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setProjectToDelete(null);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const p = projectToDelete;
+        setProjectToDelete(null);
+        handleConfirmDeleteProject(p);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [projectToDelete]);
+
+  useEffect(() => {
+    if (!sessionToDelete) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSessionToDelete(null);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const s = sessionToDelete;
+        setSessionToDelete(null);
+        if (onDeleteSession) {
+          onDeleteSession(s.id);
+        } else {
+          onCloseSession?.(s.id);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sessionToDelete, onDeleteSession, onCloseSession]);
+
+  const handleSaveRenameSession = (id: string) => {
+    const trimmed = editingSessionTitle.trim();
+    if (trimmed && onRenameSession) {
+      onRenameSession(id, trimmed);
+    }
+    setEditingSessionId(null);
+  };
+
+  const renderSessionAgentIcon = (name: string, command: string = '', agentId: string = '') => {
+    const lower = (name + ' ' + command + ' ' + agentId).toLowerCase();
+    if (lower.includes('claude')) {
+      return <ClaudeIcon size={14} className="text-[#D97757] shrink-0" />;
+    }
+    if (lower.includes('codex')) {
+      return <CodexIcon size={14} className="text-[#10a37f] shrink-0" />;
+    }
+    if (lower.includes('antigravity') || lower.includes('agy')) {
+      return <AntigravityIcon size={14} className="shrink-0" />;
+    }
+    if (lower.includes('opencode')) {
+      return <OpenCodeIcon size={14} className="text-[#6b8fff] shrink-0" />;
+    }
+    return <Bot size={14} className="text-[#007acc] shrink-0" />;
+  };
 
   const [inlineCreateParent, setInlineCreateParent] = useState<{
     dirPath: string;
@@ -187,10 +491,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [workspaceDir]);
 
   useEffect(() => {
-    const handleCloseSettingsMenu = () => setOpenSettingsPluginId(null);
+    const handleCloseSettingsMenu = () => {
+      setOpenSettingsPluginId(null);
+      setSessionContextMenu(null);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setContextMenu(null);
+        setSessionContextMenu(null);
         setActionModal(null);
         setOpenWithModalItem(null);
         setInlineRenameItem(null);
@@ -624,17 +932,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? gitStatusData.totalChanged
     : files.filter((f) => f.gitStatus && f.gitStatus !== 'IGNORED').length;
 
-  const navTabs = [
-    { id: 'files' as const, icon: Files, title: '文件资源 (Files)' },
-    {
-      id: 'git' as const,
-      icon: GitBranch,
-      title: '源代码管理 (Git)',
-      badge: changedCount > 0 ? String(changedCount) : undefined,
-    },
-    { id: 'plugins' as const, icon: LayoutGrid, title: '扩展插件 (Plugins)' },
-  ];
-
   const renderFileTree = (items: FileItem[], level = 0, parentDirPath = workspaceDir) => {
     return (
       <div>
@@ -764,8 +1061,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   borderColor: isSelected
                     ? 'rgba(0, 122, 204, 0.65)'
                     : 'transparent',
+                  fontSize: `${fontSize}px`,
                 }}
-                className={`file-tree-row flex items-center gap-2 px-2.5 py-1 text-sm cursor-pointer group rounded-md border transition-all ${
+                className={`file-tree-row flex items-center gap-2 px-2.5 py-1 cursor-pointer group rounded-md border transition-all ${
                   isDragOver
                     ? 'font-semibold shadow-xs'
                     : isSelected
@@ -798,8 +1096,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       backgroundColor: 'var(--aura-input-bg, #1e1e1e)',
                       color: 'var(--aura-text, #ffffff)',
                       borderColor: '#007acc',
+                      fontSize: `${fontSize}px`,
                     }}
-                    className="flex-1 border rounded px-1.5 py-0.5 text-xs outline-none font-mono shadow-xs"
+                    className="flex-1 border rounded px-1.5 py-0.5 outline-none font-mono shadow-xs"
                   />
                 ) : (
                   <span
@@ -944,103 +1243,351 @@ export const Sidebar: React.FC<SidebarProps> = ({
         backgroundColor: 'var(--aura-sidebar-bg)',
         color: 'var(--aura-text)',
         borderColor: 'var(--aura-border)',
-        fontSize: '14px',
+        fontSize: `${fontSize}px`,
+        fontFamily: fontFamily ? `${fontFamily}, -apple-system, BlinkMacSystemFont, sans-serif` : undefined,
       }}
       className="flex flex-col h-full w-full border-r overflow-hidden focus:outline-none"
     >
-      <div
-        style={{ backgroundColor: 'var(--aura-sidebar-header-bg, var(--aura-sidebar-bg))', borderColor: 'var(--aura-border)' }}
-        className="flex items-center gap-1 px-3 pt-2 pb-2 select-none border-b"
-      >
-        {navTabs.map((tab) => {
-          const isActive = activeView === tab.id;
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onChangeView(tab.id)}
-              title={tab.title}
-              style={{
-                backgroundColor: isActive ? 'rgba(0, 122, 204, 0.28)' : undefined,
-                borderColor: isActive ? 'rgba(0, 122, 204, 0.65)' : 'transparent',
-                color: isActive ? '#007acc' : undefined,
-              }}
-              className={`p-1.5 rounded-md relative border transition-all ${
-                isActive
-                  ? 'font-medium shadow-xs'
-                  : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-[rgba(0,122,204,0.14)]'
-              }`}
-            >
-              <Icon size={18} strokeWidth={1.9} />
-              {tab.badge && (
-                <span
-                  style={{
-                    backgroundColor: 'var(--aura-accent, #007acc)',
-                    color: 'var(--aura-accent-fg, #ffffff)',
-                  }}
-                  className="absolute -top-1 -right-1 text-[9px] font-bold px-1 rounded-full leading-tight font-mono"
-                >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      <div
-        style={{ backgroundColor: 'var(--aura-sidebar-toolbar-bg, var(--aura-sidebar-bg))', borderColor: 'var(--aura-border)' }}
-        className="flex items-center justify-between px-3 py-2 text-xs select-none border-b"
-      >
-        <span
-          onClick={onChangeWorkspaceDir}
-          style={{ color: 'var(--aura-sidebar-fg)' }}
-          className="font-bold text-[13px] tracking-tight cursor-pointer hover:opacity-80 truncate"
-          title={`当前目录: ${workspaceDir} (点击切换)`}
-        >
-          {currentDirName}
-        </span>
-
-        <div className="flex items-center gap-1 text-[var(--aura-text-muted)]">
-          <button
-            onClick={() => handleActionCreate(false)}
-            title={t.newFile}
-            className="p-1 hover:bg-black/10 dark:hover:bg-[#383838] hover:text-[var(--aura-text)] rounded transition-colors"
-          >
-            <FilePlus size={14} />
-          </button>
-          <button
-            onClick={() => handleActionCreate(true)}
-            title={t.newFolder}
-            className="p-1 hover:bg-black/10 dark:hover:bg-[#383838] hover:text-[var(--aura-text)] rounded transition-colors"
-          >
-            <FolderPlus size={14} />
-          </button>
-          <button
-            onClick={onRefreshWorkspace}
-            title={t.refresh}
-            className="p-1 hover:bg-black/10 dark:hover:bg-[#383838] hover:text-[var(--aura-text)] rounded transition-colors"
-          >
-            <RotateCw size={13} />
-          </button>
-          {onCollapseSidebar && (
-            <button
-              onClick={onCollapseSidebar}
-              title="向左收起侧边栏 (⌘B / Ctrl+B)"
-              className="p-1 hover:bg-black/10 dark:hover:bg-[#383838] hover:text-[#007acc] rounded transition-colors"
-            >
-              <PanelLeftClose size={13} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 3. Main Content based on active view */}
+      {/* 1. SESSIONS Accordion Section */}
       <div
         style={{
-          borderColor: 'transparent',
-          backgroundColor: dragOverPath === workspaceDir ? 'rgba(0, 122, 204, 0.08)' : undefined,
+          height: isDirDockedBottom
+            ? '100%'
+            : (isSessionsExpanded ? `${sessionHeight}px` : 'auto'),
+          borderColor: 'var(--aura-border)',
         }}
+        className={`flex flex-col select-none border-b ${
+          isDirDockedBottom ? 'flex-1 overflow-hidden' : (isSessionsExpanded ? 'flex-shrink-0' : '')
+        }`}
+      >
+        <div
+          onClick={() => {
+            setIsSessionsExpanded((prev) => {
+              const next = !prev;
+              localStorage.setItem('aura:sidebarSessionsExpanded', String(next));
+              return next;
+            });
+          }}
+          className="flex items-center justify-between px-3 py-1.5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 font-semibold tracking-wider text-[var(--aura-text-muted)] transition-colors flex-shrink-0"
+        >
+          <div className="flex items-center gap-1.5">
+            {isSessionsExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span style={{ fontSize: `${Math.max(11, fontSize - 2)}px` }}>Session</span>
+            {agentSessions.length > 0 && (
+              <span className="text-[10px] font-mono px-1 rounded-full bg-black/10 dark:bg-white/10 text-[var(--aura-text-muted)]">
+                {agentSessions.length}
+              </span>
+            )}
+          </div>
+          <div className="relative flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isSessionsExpanded) {
+                  setIsSessionsExpanded(true);
+                  localStorage.setItem('aura:sidebarSessionsExpanded', 'true');
+                }
+                // Automatically widen 1号窗口 if narrower than the agent menu (270px)
+                if (sidebarWidth !== undefined && sidebarWidth < 270) {
+                  onSetSidebarWidth?.(270);
+                }
+                setIsAgentMenuOpen((prev) => !prev);
+              }}
+              title="选择要启动的 AI Agent (Select Agent to Launch)"
+              className={`p-1 rounded transition-colors ${
+                isAgentMenuOpen
+                  ? 'bg-[var(--aura-accent,#007acc)]/20 text-[var(--aura-accent,#007acc)]'
+                  : 'hover:bg-black/10 dark:hover:bg-white/10 hover:text-[var(--aura-text)] text-[var(--aura-text-muted)]'
+              }`}
+            >
+              <Bot size={13} />
+            </button>
+
+            {isAgentMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-[120]">
+                <AgentDropdownMenu
+                  isOpen={isAgentMenuOpen}
+                  onClose={() => setIsAgentMenuOpen(false)}
+                  onSelectAgent={(agent) => {
+                    setIsAgentMenuOpen(false);
+                    onSelectAgent?.(agent);
+                  }}
+                  onRunInstall={(cmd, name) => {
+                    setIsAgentMenuOpen(false);
+                    onRunInstallCommand?.(cmd, name);
+                  }}
+                  onOpenAddModal={() => {
+                    setIsAgentMenuOpen(false);
+                    onOpenAddAgentModal?.();
+                  }}
+                  onOpenSettings={() => {
+                    setIsAgentMenuOpen(false);
+                    onOpenSettings?.();
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {isSessionsExpanded && (
+          <div className="flex-1 overflow-y-auto py-1 px-1.5 space-y-1 no-scrollbar">
+            {projectGroups.map((group, idx) => {
+              const isProjCollapsed = !!collapsedProjects[group.projectPath];
+              const pKey = group.projectPath || group.projectName;
+              const isFav = favoriteProjects.includes(pKey) || favoriteProjects.includes(group.projectName);
+              const prevGroup = idx > 0 ? projectGroups[idx - 1] : null;
+              const prevIsFav = prevGroup
+                ? favoriteProjects.includes(prevGroup.projectPath || prevGroup.projectName) ||
+                  favoriteProjects.includes(prevGroup.projectName)
+                : false;
+              const showDivider = idx > 0 && prevIsFav && !isFav;
+
+              return (
+                <React.Fragment key={pKey}>
+                  {showDivider && (
+                    <div className="my-1.5 border-t border-[var(--aura-border)]/40 mx-2" />
+                  )}
+                  <div className="mb-1">
+                    <div
+                      onClick={() => handleProjectClick(group)}
+                      style={{ fontSize: `${fontSize}px` }}
+                      className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer select-none transition-colors group/proj ${
+                        group.isCurrent
+                          ? 'bg-[var(--aura-accent,#007acc)]/10 text-[var(--aura-accent,#007acc)] font-medium'
+                          : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
+                      }`}
+                      title={`点击折叠会话并切换到项目目录: ${group.projectPath || group.projectName}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span
+                          onClick={(e) => toggleProjectCollapse(group.projectPath, e)}
+                          className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 flex-shrink-0"
+                        >
+                          {isProjCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                        </span>
+                        <FolderGit2 size={13} className={group.isCurrent ? 'text-[var(--aura-accent,#007acc)] shrink-0' : 'text-[var(--aura-text-muted)] shrink-0'} />
+                        <span style={{ fontSize: `${fontSize}px` }} className="truncate font-semibold">{group.projectName}</span>
+                        {group.isCurrent && (
+                          <span
+                            title="当前工作区 (Current Workspace)"
+                            className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => toggleFavoriteProject(pKey, e)}
+                          title={isFav ? "取消收藏 (Unfavorite)" : "收藏项目并置顶 (Favorite & Pin to top)"}
+                          className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                        >
+                          <Star
+                            size={12}
+                            className={
+                              isFav
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-[var(--aura-text-muted)] opacity-0 group-hover/proj:opacity-100 hover:text-amber-400 transition-opacity'
+                            }
+                          />
+                        </button>
+                        <span className="text-[10px] font-mono text-[var(--aura-text-muted)] opacity-70 group-hover/proj:opacity-100">
+                          ({group.sessions.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProjectToDelete(group);
+                          }}
+                          title="Remove project from session list (Does not delete database records)"
+                          className="opacity-0 group-hover/proj:opacity-100 p-0.5 rounded hover:bg-red-500/15 hover:text-red-400 text-[var(--aura-text-muted)] transition-all cursor-pointer"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </div>
+
+                  {!isProjCollapsed && (
+                    <div className="pl-4 mt-0.5 space-y-0.5 border-l border-[var(--aura-border)]/40 ml-3">
+                      {group.sessions.length === 0 ? (
+                        <div
+                          onClick={() => {
+                            if (sidebarWidth !== undefined && sidebarWidth < 270) {
+                              onSetSidebarWidth?.(270);
+                            }
+                            setIsAgentMenuOpen(true);
+                          }}
+                          className="px-2 py-1 text-[11px] text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5 rounded cursor-pointer transition-colors flex items-center justify-between"
+                          title="点击选择要启动的 AI Agent"
+                        >
+                          <span>暂无会话 (点击启动)</span>
+                          <span className="text-[10px] text-[var(--aura-accent,#007acc)] font-medium">启动 +</span>
+                        </div>
+                      ) : (
+                        group.sessions.map((session) => (
+                          editingSessionId === session.id ? (
+                            <div
+                              key={session.id}
+                              className="flex items-center gap-1.5 px-2 py-1 rounded bg-[var(--aura-card-bg,#252526)] border border-[var(--aura-accent,#007acc)]/60 my-0.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex-shrink-0">
+                                {renderSessionAgentIcon(session.agentName, session.agentCommand, session.agentId)}
+                              </div>
+                              <input
+                                type="text"
+                                autoFocus
+                                value={editingSessionTitle}
+                                onChange={(e) => setEditingSessionTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSaveRenameSession(session.id);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingSessionId(null);
+                                  }
+                                }}
+                                onBlur={() => handleSaveRenameSession(session.id)}
+                                style={{
+                                  backgroundColor: 'var(--aura-input-bg, #1e1e1e)',
+                                  borderColor: 'transparent',
+                                  color: 'var(--aura-text, #ffffff)',
+                                }}
+                                className="flex-1 text-xs outline-none rounded px-1.5 py-0.5 font-sans"
+                              />
+                            </div>
+                          ) : (
+                            <div
+                              key={session.id}
+                              onClick={() => onSelectSession?.(session)}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSessionContextMenu({
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  session,
+                                });
+                              }}
+                              className={`flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer transition-colors group ${
+                                session.isActive
+                                  ? 'bg-[var(--aura-accent,#007acc)]/15 text-[var(--aura-accent,#007acc)] font-medium'
+                                  : 'text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
+                              }`}
+                              title="点击打开并继续聊天，右键弹出选项或双击重命名"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <div className="flex-shrink-0">
+                                  {renderSessionAgentIcon(session.agentName, session.agentCommand, session.agentId)}
+                                </div>
+                                <span
+                                  style={{ fontSize: `${fontSize}px` }}
+                                  className="truncate select-none"
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingSessionId(session.id);
+                                    setEditingSessionTitle(session.title);
+                                  }}
+                                >
+                                  {session.title}
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSessionToDelete(session);
+                                }}
+                                title="Delete session"
+                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/15 hover:text-red-400 text-[var(--aura-text-muted)] transition-all cursor-pointer flex-shrink-0"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          )
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </React.Fragment>
+            );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Draggable Splitter between Session and Dir */}
+      {!isDirDockedBottom && isSessionsExpanded && (
+        <div
+          onMouseDown={handleMouseDownSplitter}
+          className="h-1.5 w-full cursor-row-resize bg-transparent hover:bg-[var(--aura-accent,#007acc)]/30 transition-colors select-none z-10 flex-shrink-0 relative group flex items-center justify-center"
+          title="拖动调整 Session 和 Dir 高度 (Drag to resize Session and Dir)"
+        >
+          <div className="w-8 h-[2px] rounded-full bg-[var(--aura-border)] group-hover:bg-[var(--aura-accent,#007acc)]" />
+        </div>
+      )}
+
+      {/* 2. Dir Section (Collapsible & Dockable to bottom) */}
+      <div
+        className={`flex flex-col overflow-hidden select-none ${
+          isDirDockedBottom ? 'mt-auto flex-shrink-0 border-t' : 'flex-1'
+        }`}
+        style={{ borderColor: 'var(--aura-border)' }}
+      >
+        <div
+          style={{ backgroundColor: 'var(--aura-sidebar-toolbar-bg, var(--aura-sidebar-bg))', borderColor: 'var(--aura-border)' }}
+          className="flex items-center justify-between px-3 py-1.5 text-xs select-none border-b flex-shrink-0"
+        >
+          <div
+            onClick={() => {
+              if (isDirDockedBottom) {
+                setIsDirDockedBottom(false);
+                setIsDirExpanded(true);
+                localStorage.setItem('aura:sidebarDirDockedBottom', 'false');
+                localStorage.setItem('aura:sidebarDirExpanded', 'true');
+              } else {
+                setIsDirExpanded((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('aura:sidebarDirExpanded', String(next));
+                  return next;
+                });
+              }
+            }}
+            className="flex items-center gap-1.5 cursor-pointer hover:text-[var(--aura-accent,#007acc)] transition-colors text-[11px] font-semibold tracking-wider text-[var(--aura-text-muted)]"
+            title={isDirExpanded && !isDirDockedBottom ? '点击折叠目录 (Click to collapse Dir)' : '点击展开目录 (Click to expand Dir)'}
+          >
+            {isDirExpanded && !isDirDockedBottom ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span style={{ fontSize: `${Math.max(11, fontSize - 2)}px` }}>Dir</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsDirDockedBottom((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('aura:sidebarDirDockedBottom', String(next));
+                  return next;
+                });
+              }}
+              title={isDirDockedBottom ? '展开目录 (Expand Dir)' : '按一下去1窗口底部 (Dock to bottom)'}
+              className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] transition-colors"
+            >
+              {isDirDockedBottom ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          </div>
+        </div>
+
+        {/* 3. Main Content based on active view */}
+        {!isDirDockedBottom && (
+          <div
+            style={{
+              borderColor: 'transparent',
+              backgroundColor: dragOverPath === workspaceDir ? 'rgba(0, 122, 204, 0.08)' : undefined,
+            }}
         onDragOver={(e) => {
           if (activeView === 'files') {
             e.preventDefault();
@@ -1079,7 +1626,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}
         className={`flex-1 py-0.5 border ${activeView === 'git' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto'}`}
       >
-        {activeView === 'files' && (
+        {isDirExpanded && activeView === 'files' && (
           <div
             onDragOver={(e) => {
               const target = e.target as HTMLElement;
@@ -1711,6 +2258,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         )}
+          </div>
+        )}
       </div>
 
       {actionModal && (
@@ -1929,6 +2478,163 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
+      {/* Session Item Right-Click Context Menu */}
+      {sessionContextMenu && (
+        <div
+          style={{
+            top: `${sessionContextMenu.y}px`,
+            left: `${sessionContextMenu.x}px`,
+            backgroundColor: 'var(--aura-card-bg, #252526)',
+            borderColor: 'var(--aura-border, #454545)',
+            color: 'var(--aura-text, #cccccc)',
+          }}
+          className="fixed z-[160] w-32 border rounded-lg shadow-2xl py-1 text-xs select-none animate-in fade-in duration-75"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="py-0.5">
+            <div
+              onClick={() => {
+                const s = sessionContextMenu.session;
+                setSessionContextMenu(null);
+                setEditingSessionId(s.id);
+                setEditingSessionTitle(s.title);
+              }}
+              className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--aura-accent,#007acc)]/20 hover:text-[var(--aura-accent,#007acc)] cursor-pointer transition-colors"
+            >
+              <span>Rename</span>
+            </div>
+            <div
+              onClick={() => {
+                const s = sessionContextMenu.session;
+                setSessionContextMenu(null);
+                setSessionToDelete(s);
+              }}
+              className="flex items-center justify-between px-3 py-1.5 hover:bg-red-500/20 hover:text-red-400 cursor-pointer transition-colors text-red-400"
+            >
+              <span>Delete</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session Delete Confirmation Modal */}
+      {sessionToDelete && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4 select-none animate-in fade-in duration-100"
+          onClick={() => setSessionToDelete(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'var(--aura-card-bg, #252526)',
+              borderColor: 'var(--aura-border, #454545)',
+              color: 'var(--aura-text, #cccccc)',
+            }}
+            className="w-full max-w-sm border rounded-xl shadow-2xl p-5 space-y-4 font-sans animate-in zoom-in-95 duration-100"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-red-500/10 text-red-400 flex-shrink-0 mt-0.5">
+                <Trash2 size={18} />
+              </div>
+              <div className="space-y-1 min-w-0 flex-1">
+                <h4 className="font-semibold text-sm text-[var(--aura-text)]">
+                  Delete Session?
+                </h4>
+                <p className="text-xs text-[var(--aura-text-muted)] leading-relaxed">
+                  Are you sure you want to delete session <span className="font-medium text-[var(--aura-text)] truncate inline-block max-w-[200px] align-bottom">"{sessionToDelete.title}"</span>?
+                </p>
+                <p className="text-[11px] text-red-400/80">
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setSessionToDelete(null)}
+                className="px-3 py-1.5 text-xs text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                Cancel (Esc)
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  const s = sessionToDelete;
+                  setSessionToDelete(null);
+                  if (onDeleteSession) {
+                    onDeleteSession(s.id);
+                  } else {
+                    onCloseSession?.(s.id);
+                  }
+                }}
+                className="px-3.5 py-1.5 text-xs text-white rounded-lg font-medium shadow-xs bg-red-600 hover:bg-red-700 active:scale-95 transition-all cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Remove Confirmation Modal (二次确认，不删数据库) */}
+      {projectToDelete && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4 select-none animate-in fade-in duration-100"
+          onClick={() => setProjectToDelete(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'var(--aura-card-bg, #252526)',
+              borderColor: 'var(--aura-border, #454545)',
+              color: 'var(--aura-text, #cccccc)',
+            }}
+            className="w-full max-w-sm border rounded-xl shadow-2xl p-5 space-y-4 font-sans animate-in zoom-in-95 duration-100"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-red-500/10 text-red-400 flex-shrink-0 mt-0.5">
+                <Trash2 size={18} />
+              </div>
+              <div className="space-y-1.5 min-w-0 flex-1">
+                <h4 className="font-semibold text-sm text-[var(--aura-text)]">
+                  Remove Project from List?
+                </h4>
+                <p className="text-xs text-[var(--aura-text-muted)] leading-relaxed">
+                  Are you sure you want to remove project <span className="font-medium text-[var(--aura-text)] truncate inline-block max-w-[200px] align-bottom">"{projectToDelete.projectName}"</span> from the list?
+                </p>
+                <p className="text-[11px] text-amber-400/90 leading-relaxed bg-amber-500/10 p-2 rounded-md border border-amber-500/20">
+                  Note: This only removes the project from this view without deleting sessions in the database. It will reload automatically when reopened.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setProjectToDelete(null)}
+                className="px-3 py-1.5 text-xs text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                Cancel (Esc)
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  const p = projectToDelete;
+                  setProjectToDelete(null);
+                  handleConfirmDeleteProject(p);
+                }}
+                className="px-3.5 py-1.5 text-xs text-white rounded-lg font-medium shadow-xs bg-red-600 hover:bg-red-700 active:scale-95 transition-all cursor-pointer"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* VS Code Style "Open With..." Modal for Markdown */}
       {openWithModalItem && (
         <div
@@ -2062,25 +2768,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </span>
               </div>
 
-              <div
-                onClick={() => {
-                  onSelectFile(openWithModalItem, 'outline');
-                  setOpenWithModalItem(null);
-                }}
-                className="p-3 rounded-lg bg-[#1e1e1e] border border-[#333333] hover:border-[#007acc] hover:bg-[#04395e]/40 cursor-pointer transition-all flex items-center justify-between group"
-              >
-                <div className="space-y-0.5">
-                  <div className="font-semibold text-white group-hover:text-[#007acc] text-[12.5px]">
-                    Article Structure (Outline)
-                  </div>
-                  <div className="text-[11px] text-[#888888]">
-                    Document outline hierarchy with instant heading navigation
-                  </div>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-[#2a2a2a] text-gray-400 font-mono">
-                  Outline
-                </span>
-              </div>
+
             </div>
 
             <div className="flex justify-end pt-1">

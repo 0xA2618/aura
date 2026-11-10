@@ -12,7 +12,6 @@ const VSCODE_KEYBINDINGS: ShortcutItem[] = [
   // General
   { command: 'workbench.action.quickOpen', keybinding: '⌘P', category: 'General', description: '快速打开文件 (Quick Open File)' },
   { command: 'workbench.action.showCommands', keybinding: '⇧⌘P', category: 'General', description: '打开全局命令面板 (Command Palette)' },
-  { command: 'workbench.action.toggleSidebarVisibility', keybinding: '⌘B', category: 'General', description: '显示/隐藏左侧目录树侧边栏 (Toggle Sidebar)' },
   { command: 'workbench.action.openKeybindings', keybinding: '⌘K ⌘S', category: 'General', description: '打开键盘快捷键参考 (Keyboard Shortcuts)' },
   { command: 'workbench.action.openSettings', keybinding: '⌘,', category: 'General', description: '打开偏好设置 (Preferences / Settings)' },
   { command: 'workbench.action.quitApp', keybinding: '⌘Q Q', category: 'General', description: '双击退出应用程序 (Double Press to Quit)' },

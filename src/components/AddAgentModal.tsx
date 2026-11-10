@@ -78,7 +78,7 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, o
     >
       <div
         style={{
-          backgroundColor: 'var(--aura-bg-elevated, #252526)',
+          backgroundColor: 'var(--aura-bg-elevated, var(--aura-card-bg, #252526))',
           borderColor: 'var(--aura-border, rgba(125, 125, 125, 0.25))',
           color: 'var(--aura-text, #cccccc)',
         }}
@@ -95,15 +95,15 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, o
               <Plus size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-sm text-[var(--aura-text,#ffffff)]">Add Custom Agent</h3>
-              <p className="text-xs text-[var(--aura-text-muted,#858585)]">
+              <h3 className="font-semibold text-sm text-[var(--aura-text)]">Add Custom Agent</h3>
+              <p className="text-xs text-[var(--aura-text-muted)]">
                 Provide launch path to register and run in Container 3
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/10 dark:hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X size={16} />
           </button>
@@ -119,7 +119,7 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, o
 
           <div className="space-y-3.5">
             <div>
-              <label className="block font-medium mb-1.5 text-[var(--aura-text,#ffffff)]">
+              <label className="block font-medium mb-1.5 text-[var(--aura-text)]">
                 Agent Name
               </label>
               <input
@@ -129,16 +129,16 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, o
                 value={agentName}
                 onChange={(e) => setAgentName(e.target.value)}
                 style={{
-                  backgroundColor: 'var(--aura-input-bg, rgba(0, 0, 0, 0.2))',
-                  borderColor: 'var(--aura-border, rgba(125, 125, 125, 0.3))',
-                  color: 'var(--aura-text, #ffffff)',
+                  backgroundColor: 'var(--aura-input-bg)',
+                  borderColor: 'var(--aura-border)',
+                  color: 'var(--aura-text)',
                 }}
                 className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:border-[var(--aura-accent,#007acc)] text-xs font-sans"
               />
             </div>
 
             <div>
-              <label className="block font-medium mb-1.5 text-[var(--aura-text,#ffffff)]">
+              <label className="block font-medium mb-1.5 text-[var(--aura-text)]">
                 Executable Launch Path or Command
               </label>
               <div className="relative">
@@ -148,9 +148,9 @@ export const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, o
                   value={agentPath}
                   onChange={(e) => setAgentPath(e.target.value)}
                   style={{
-                    backgroundColor: 'var(--aura-input-bg, rgba(0, 0, 0, 0.2))',
-                    borderColor: 'var(--aura-border, rgba(125, 125, 125, 0.3))',
-                    color: 'var(--aura-text, #ffffff)',
+                    backgroundColor: 'var(--aura-input-bg)',
+                    borderColor: 'var(--aura-border)',
+                    color: 'var(--aura-text)',
                   }}
                   className="w-full px-3 py-2 rounded-lg border focus:outline-none focus:border-[var(--aura-accent,#007acc)] font-mono text-[11px]"
                 />
