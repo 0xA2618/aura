@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Editor, { DiffEditor, useMonaco } from '@monaco-editor/react';
 import { OpenTab, PluginManifest } from '../types';
-import { X, FileCode, Puzzle, Download, Star, ShieldCheck, CheckCircle2, ChevronDown, ChevronRight, ChevronLeft, ListTree, Code, Eye, Network, PanelRightClose, PanelRightOpen, GitCompare } from 'lucide-react';
+import { X, FileCode, Puzzle, Download, Star, ShieldCheck, CheckCircle2, ChevronDown, ChevronRight, ChevronLeft, ListTree, Code, Eye, Network, PanelRightClose, PanelRightOpen, GitCompare, Columns, Rows } from 'lucide-react';
 import { THEMES } from '../services/themeService';
 import { PLUGIN_LOGOS } from '../services/pluginLogos';
 import { MarkmapViewer } from './MarkmapViewer';
@@ -25,7 +25,9 @@ interface CodeEditorProps {
   onInstallPlugin?: (plugin: any) => void;
   onUninstallPlugin?: (id: string) => void;
   workspaceDir?: string;
-  onOpenFileByPath?: (path: string) => void;
+  onOpenFileByPath?: (path: string, forceNormalEditor?: boolean) => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 const DEFAULT_EDITOR_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "PingFang SC", "Microsoft YaHei", monospace';
@@ -36,6 +38,131 @@ const getEffectiveEditorFont = (customFont?: string) => {
     return `"${clean}", "JetBrains Mono", Menlo, Monaco, 'Courier New', ${DEFAULT_EDITOR_FALLBACK}`;
   }
   return `"JetBrains Mono", Menlo, Monaco, 'Courier New', ${DEFAULT_EDITOR_FALLBACK}`;
+};
+
+export interface PyCharmDiffHunk {
+  type: 'add' | 'delete' | 'modify';
+  origStart: number;
+  origEnd: number;
+  modStart: number;
+  modEnd: number;
+}
+
+export const computePyCharmDiffHunks = (orig: string[], mod: string[]): PyCharmDiffHunk[] => {
+  const m = orig.length;
+  const n = mod.length;
+
+  if (m === 0 && n === 0) return [];
+  if (m === 0) {
+    return [{ type: 'add', origStart: 0, origEnd: 0, modStart: 1, modEnd: n }];
+  }
+  if (n === 0) {
+    return [{ type: 'delete', origStart: 1, origEnd: m, modStart: 0, modEnd: 0 }];
+  }
+
+  let prefix = 0;
+  while (prefix < m && prefix < n && orig[prefix] === mod[prefix]) {
+    prefix++;
+  }
+
+  let suffix = 0;
+  while (
+    suffix < m - prefix &&
+    suffix < n - prefix &&
+    orig[m - 1 - suffix] === mod[n - 1 - suffix]
+  ) {
+    suffix++;
+  }
+
+  const subOrig = orig.slice(prefix, m - suffix);
+  const subMod = mod.slice(prefix, n - suffix);
+  const subM = subOrig.length;
+  const subN = subMod.length;
+
+  if (subM === 0 && subN === 0) return [];
+
+  const dp = Array(subM + 1).fill(0).map(() => new Uint16Array(subN + 1));
+  for (let i = 0; i < subM; i++) {
+    for (let j = 0; j < subN; j++) {
+      if (subOrig[i] === subMod[j]) {
+        dp[i + 1][j + 1] = dp[i][j] + 1;
+      } else {
+        dp[i + 1][j + 1] = Math.max(dp[i][j + 1], dp[i + 1][j]);
+      }
+    }
+  }
+
+  let i = subM;
+  let j = subN;
+  const ops: Array<{ type: 'same' | 'add' | 'delete'; oIdx: number; mIdx: number }> = [];
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && subOrig[i - 1] === subMod[j - 1]) {
+      ops.unshift({ type: 'same', oIdx: prefix + i, mIdx: prefix + j });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.unshift({ type: 'add', oIdx: prefix + i, mIdx: prefix + j });
+      j--;
+    } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+      ops.unshift({ type: 'delete', oIdx: prefix + i, mIdx: prefix + j });
+      i--;
+    }
+  }
+
+  const hunks: PyCharmDiffHunk[] = [];
+  let curOrig: number[] = [];
+  let curMod: number[] = [];
+  let lastAnchorOrig = prefix;
+  let lastAnchorMod = prefix;
+
+  const flush = () => {
+    if (curOrig.length === 0 && curMod.length === 0) return;
+    if (curOrig.length > 0 && curMod.length > 0) {
+      hunks.push({
+        type: 'modify',
+        origStart: curOrig[0],
+        origEnd: curOrig[curOrig.length - 1],
+        modStart: curMod[0],
+        modEnd: curMod[curMod.length - 1],
+      });
+    } else if (curMod.length > 0) {
+      hunks.push({
+        type: 'add',
+        origStart: lastAnchorOrig,
+        origEnd: lastAnchorOrig,
+        modStart: curMod[0],
+        modEnd: curMod[curMod.length - 1],
+      });
+    } else {
+      hunks.push({
+        type: 'delete',
+        origStart: curOrig[0],
+        origEnd: curOrig[curOrig.length - 1],
+        modStart: lastAnchorMod,
+        modEnd: lastAnchorMod,
+      });
+    }
+    curOrig = [];
+    curMod = [];
+  };
+
+  for (const op of ops) {
+    if (op.type === 'same') {
+      flush();
+      lastAnchorOrig = op.oIdx;
+      lastAnchorMod = op.mIdx;
+    } else if (op.type === 'add') {
+      curMod.push(op.mIdx);
+      lastAnchorOrig = op.oIdx;
+    } else if (op.type === 'delete') {
+      curOrig.push(op.oIdx);
+      lastAnchorMod = op.mIdx;
+    }
+  }
+  flush();
+
+  return hunks;
 };
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({
@@ -55,6 +182,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   onUninstallPlugin,
   workspaceDir,
   onOpenFileByPath,
+  isSidebarOpen = true,
+  onToggleSidebar,
 }) => {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
@@ -69,6 +198,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
+  const diffEditorRef = useRef<any>(null);
   const [vimMode, setVimMode] = useState<'NORMAL' | 'INSERT' | 'VISUAL'>('NORMAL');
   const vimModeRef = useRef<'NORMAL' | 'INSERT' | 'VISUAL'>('NORMAL');
   vimModeRef.current = vimMode;
@@ -81,6 +211,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [isTocVisible, setIsTocVisible] = useState<boolean>(() => {
     return localStorage.getItem('aura:mpeTocVisible') !== 'false';
   });
+  const [isSplitDiff, setIsSplitDiff] = useState(false);
+  const [diffViewMode, setDiffViewMode] = useState<'split' | 'unified'>('split');
+  const [originalDiffText, setOriginalDiffText] = useState<string>('');
+  const [diffStats, setDiffStats] = useState<{ added: number; modified: number; deleted: number }>({ added: 0, modified: 0, deleted: 0 });
+  const initialFileSnapshotRef = useRef<Record<string, string>>({});
   const gitHeadContentRef = useRef<Record<string, string>>({});
   const editorDecorationsRef = useRef<any>(null);
 
@@ -88,21 +223,28 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     if (!editorRef.current || !monaco || !activeTab) return;
     if (activeTab.type === 'diff' || activeTab.type === 'extension') return;
 
+    if (initialFileSnapshotRef.current[activeTab.path] === undefined) {
+      initialFileSnapshotRef.current[activeTab.path] = activeTab.content;
+    }
+
     let headText = gitHeadContentRef.current[activeTab.path];
     if (headText === undefined) {
       headText = await fetchGitHeadContent(activeTab.path, workspaceDir);
       gitHeadContentRef.current[activeTab.path] = headText;
     }
 
-    if (!headText) {
+    const baselineText = (headText && headText.trim() !== '') ? headText : initialFileSnapshotRef.current[activeTab.path] || '';
+
+    if (!baselineText) {
       if (editorDecorationsRef.current) {
         editorDecorationsRef.current.clear();
       }
+      setDiffStats({ added: 0, modified: 0, deleted: 0 });
       return;
     }
 
     const currentText = editorRef.current.getValue();
-    const originalLines = headText.split('\n');
+    const originalLines = baselineText.split('\n');
     const modifiedLines = currentText.split('\n');
 
     const computeDiffHunks = (orig: string[], mod: string[]) => {
@@ -180,20 +322,35 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     };
 
     const hunks = computeDiffHunks(originalLines, modifiedLines);
+    let added = 0;
+    let modified = 0;
+    let deleted = 0;
+    hunks.forEach((hunk) => {
+      const span = hunk.endLine - hunk.startLine + 1;
+      if (hunk.type === 'add') added += span;
+      else if (hunk.type === 'modify') modified += span;
+      else if (hunk.type === 'delete') deleted += 1;
+    });
+    setDiffStats({ added, modified, deleted });
+
     const newDecorations: any[] = [];
 
     hunks.forEach((hunk) => {
       let marginClassName = '';
+      let lineClassName = '';
       let overviewColor = '';
 
       if (hunk.type === 'add') {
         marginClassName = 'aura-git-gutter-added';
+        lineClassName = 'aura-git-line-added';
         overviewColor = '#28a745';
       } else if (hunk.type === 'delete') {
         marginClassName = 'aura-git-gutter-deleted';
+        lineClassName = 'aura-git-line-deleted';
         overviewColor = '#e5534b';
       } else {
         marginClassName = 'aura-git-gutter-modified';
+        lineClassName = 'aura-git-line-modified';
         overviewColor = '#e3b341';
       }
 
@@ -202,6 +359,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         options: {
           isWholeLine: true,
           linesDecorationsClassName: marginClassName,
+          className: lineClassName,
           overviewRuler: {
             color: overviewColor,
             position: monaco.editor.OverviewRulerLane.Right,
@@ -216,6 +374,92 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       editorDecorationsRef.current.set(newDecorations);
     }
   };
+
+  const handleOpenSplitDiff = async () => {
+    if (!activeTab) return;
+    if (initialFileSnapshotRef.current[activeTab.path] === undefined) {
+      initialFileSnapshotRef.current[activeTab.path] = activeTab.content;
+    }
+    let head = gitHeadContentRef.current[activeTab.path];
+    if (head === undefined) {
+      head = await fetchGitHeadContent(activeTab.path, workspaceDir);
+      gitHeadContentRef.current[activeTab.path] = head;
+    }
+    const base = (head && head.trim() !== '') ? head : initialFileSnapshotRef.current[activeTab.path] || '';
+    setOriginalDiffText(base);
+    setIsSplitDiff(true);
+    setDiffViewMode('split');
+    setIsModeMenuOpen(false);
+  };
+
+  const handleCloseSplitDiff = () => {
+    setIsSplitDiff(false);
+    if (activeTab) {
+      activeTab.isSplitDiff = false;
+    }
+    setTimeout(() => {
+      if (editorRef.current && activeTabRef.current) {
+        if (editorRef.current.getValue() !== activeTabRef.current.content) {
+          editorRef.current.setValue(activeTabRef.current.content);
+        }
+      }
+      updateGitGutterDecorations();
+    }, 60);
+  };
+
+  const handleDiffMount = (diffEditor: any, monacoInstance: any) => {
+    diffEditorRef.current = diffEditor;
+    const modifiedEditor = diffEditor.getModifiedEditor();
+    const originalEditor = diffEditor.getOriginalEditor();
+
+    originalEditor.updateOptions({ renderValidationDecorations: 'off' });
+    modifiedEditor.updateOptions({ renderValidationDecorations: 'off' });
+
+    if (monacoInstance) {
+      if (monacoInstance.languages?.typescript) {
+        monacoInstance.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+          noSemanticValidation: true,
+          noSyntaxValidation: true,
+        });
+        monacoInstance.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+          noSemanticValidation: true,
+          noSyntaxValidation: true,
+        });
+      }
+
+      const origModel = originalEditor.getModel();
+      const modModel = modifiedEditor.getModel();
+      if (origModel) monacoInstance.editor.setModelMarkers(origModel, 'typescript', []);
+      if (modModel) monacoInstance.editor.setModelMarkers(modModel, 'typescript', []);
+
+      modifiedEditor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
+        onSaveRef.current?.();
+        setTimeout(() => {
+          updateGitGutterDecorations();
+        }, 80);
+      });
+    }
+
+    modifiedEditor.onDidChangeModelContent(() => {
+      const val = modifiedEditor.getValue();
+      onChangeContent(val || '');
+    });
+
+    modifiedEditor.focus();
+  };
+
+  useEffect(() => {
+    if (activeTab?.isSplitDiff) {
+      setIsSplitDiff(true);
+      if (activeTab.diffOriginal !== undefined && activeTab.diffOriginal !== '') {
+        setOriginalDiffText(activeTab.diffOriginal);
+      } else {
+        handleOpenSplitDiff();
+      }
+    } else {
+      setIsSplitDiff(false);
+    }
+  }, [activeTab?.id, activeTab?.isSplitDiff]);
 
   const handleToggleToc = () => {
     setIsTocVisible((prev) => {
@@ -296,6 +540,23 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     updateVimMode('NORMAL');
     updateGitGutterDecorations();
 
+    editor.updateOptions({ renderValidationDecorations: 'off' });
+
+    if (monacoInstance && monacoInstance.languages?.typescript) {
+      monacoInstance.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: true,
+        noSyntaxValidation: true,
+      });
+      monacoInstance.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: true,
+        noSyntaxValidation: true,
+      });
+      const model = editor.getModel();
+      if (model) {
+        monacoInstance.editor.setModelMarkers(model, 'typescript', []);
+      }
+    }
+
     editor.onDidChangeModelContent(() => {
       updateGitGutterDecorations();
     });
@@ -308,6 +569,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       ],
       run: () => {
         onSaveRef.current?.();
+        setTimeout(() => {
+          updateGitGutterDecorations();
+        }, 80);
       }
     });
 
@@ -340,6 +604,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           e.preventDefault();
           e.stopPropagation();
           onSaveRef.current?.();
+          setTimeout(() => {
+            updateGitGutterDecorations();
+          }, 80);
           return;
         }
         if (key.toLowerCase() === 'w') {
@@ -844,106 +1111,226 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           })}
         </div>
 
-        {activeTab && activeTab.type !== 'extension' && (
-          <div className="flex-shrink-0 px-3 flex items-center relative z-50">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsModeMenuOpen(!isModeMenuOpen);
-              }}
-              style={{
-                backgroundColor: 'var(--aura-card-bg)',
-                borderColor: 'var(--aura-border)',
-                color: 'var(--aura-text)'
-              }}
-              className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border shadow-xs hover:border-[#007acc] transition-colors font-medium cursor-pointer"
-            >
-              <span>
-                {activeTab.viewMode === 'markdown-preview'
-                  ? 'Markdown Preview Enhanced'
-                  : activeTab.viewMode === 'markmap'
-                  ? 'Markmap Mind Map'
-                  : activeTab.viewMode === 'outline'
-                  ? 'Article Structure'
-                  : 'Text Editor (Vim)'}
-              </span>
-              <ChevronDown size={13} className="text-gray-400" />
-            </button>
+        {activeTab && activeTab.type !== 'extension' && (() => {
+          const isDiffTab = activeTab.type === 'diff';
+          const isDiffActive = isSplitDiff || isDiffTab;
+          const isMarkdownFile = Boolean(
+            activeTab.language === 'markdown' ||
+            activeTab.name?.toLowerCase().endsWith('.md') ||
+            activeTab.name?.toLowerCase().endsWith('.markdown') ||
+            activeTab.path?.toLowerCase().endsWith('.md') ||
+            activeTab.path?.toLowerCase().endsWith('.markdown')
+          );
 
-            {isModeMenuOpen && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  backgroundColor: 'var(--aura-card-bg)',
-                  borderColor: 'var(--aura-border)',
-                  color: 'var(--aura-text)'
-                }}
-                className="absolute right-3 top-8 w-60 border rounded-lg shadow-2xl py-1 text-xs select-none z-50 divide-y divide-[var(--aura-border)]"
-              >
-                <div className="py-1">
+          return (
+            <div className="flex-shrink-0 px-3 flex items-center relative z-50 gap-2">
+              {isDiffActive ? (
+                <div className="flex items-center gap-2">
+                  {/* Segmented Switcher for Split / Unified Diff */}
                   <div
-                    onClick={() => {
-                      activeTab.viewMode = 'editor';
-                      onSelectTab({ ...activeTab });
-                      setIsModeMenuOpen(false);
+                    style={{
+                      backgroundColor: 'var(--aura-card-bg)',
+                      borderColor: 'var(--aura-border)',
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
-                      !activeTab.viewMode || activeTab.viewMode === 'editor' ? 'text-[#007acc] font-semibold' : ''
-                    }`}
+                    className="flex items-center rounded border p-0.5 text-xs font-medium shadow-xs"
                   >
-                    <Code size={13} />
-                    <span>Text Editor (Vim)</span>
+                    <button
+                      type="button"
+                      onClick={() => setDiffViewMode('split')}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                        diffViewMode === 'split'
+                          ? 'bg-[#007acc] text-white font-semibold shadow-xs'
+                          : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]'
+                      }`}
+                      title="左右分栏对比 (Side-by-Side Diff)"
+                    >
+                      <Columns size={12} />
+                      <span>Split</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiffViewMode('unified')}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                        diffViewMode === 'unified'
+                          ? 'bg-[#007acc] text-white font-semibold shadow-xs'
+                          : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]'
+                      }`}
+                      title="单栏行内对比 (Unified Inline Diff)"
+                    >
+                      <Rows size={12} />
+                      <span>Unified</span>
+                    </button>
                   </div>
+
+                  {/* Mode Switcher */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsModeMenuOpen(!isModeMenuOpen);
+                    }}
+                    style={{
+                      backgroundColor: 'var(--aura-card-bg)',
+                      borderColor: 'var(--aura-border)',
+                      color: 'var(--aura-text)',
+                    }}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border shadow-xs hover:border-[#007acc] transition-colors font-medium cursor-pointer"
+                  >
+                    <span>
+                      {activeTab.viewMode === 'markdown-preview'
+                        ? 'Markdown Preview Enhanced'
+                        : activeTab.viewMode === 'markmap'
+                        ? 'Markmap Mind Map'
+                        : 'Diff Comparison'}
+                    </span>
+                    <ChevronDown size={13} className="text-gray-400" />
+                  </button>
                 </div>
+              ) : (
+                <>
+                  {/* Code Diff info badge */}
+                  {(diffStats.added > 0 || diffStats.modified > 0 || diffStats.deleted > 0) && (
+                    <div
+                      onClick={handleOpenSplitDiff}
+                      className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono cursor-pointer transition-colors bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/30 select-none shadow-xs"
+                      title="代码差异 (Code Diff): 点击切换左右分栏对比"
+                    >
+                      <GitCompare size={12} />
+                      <span>Code Diff: +{diffStats.added} -{diffStats.deleted} ~{diffStats.modified}</span>
+                    </div>
+                  )}
 
-                <div className="py-1">
-                  <div
-                    onClick={() => {
-                      activeTab.viewMode = 'markdown-preview';
-                      onSelectTab({ ...activeTab });
-                      setIsModeMenuOpen(false);
+                  {/* Split Diff / Side-by-Side Diff button */}
+                  <button
+                    type="button"
+                    onClick={handleOpenSplitDiff}
+                    style={{
+                      backgroundColor: 'var(--aura-card-bg)',
+                      borderColor: 'var(--aura-border)',
+                      color: 'var(--aura-text)',
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
-                      activeTab.viewMode === 'markdown-preview' ? 'text-[#007acc] font-semibold' : ''
-                    }`}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border shadow-xs hover:border-[#007acc] transition-colors font-medium cursor-pointer"
+                    title="Side-by-side code diff comparison (Split Diff)"
                   >
-                    <Eye size={13} />
-                    <span>Markdown Preview Enhanced</span>
+                    <GitCompare size={13} className="text-gray-400" />
+                    <span>Split Diff</span>
+                  </button>
+
+                  {/* Mode Switcher */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsModeMenuOpen(!isModeMenuOpen);
+                    }}
+                    style={{
+                      backgroundColor: 'var(--aura-card-bg)',
+                      borderColor: 'var(--aura-border)',
+                      color: 'var(--aura-text)',
+                    }}
+                    className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border shadow-xs hover:border-[#007acc] transition-colors font-medium cursor-pointer"
+                  >
+                    <span>
+                      {activeTab.viewMode === 'markdown-preview'
+                        ? 'Markdown Preview Enhanced'
+                        : activeTab.viewMode === 'markmap'
+                        ? 'Markmap Mind Map'
+                        : 'Text Editor (Vim)'}
+                    </span>
+                    <ChevronDown size={13} className="text-gray-400" />
+                  </button>
+                </>
+              )}
+
+              {isModeMenuOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    backgroundColor: 'var(--aura-card-bg)',
+                    borderColor: 'var(--aura-border)',
+                    color: 'var(--aura-text)',
+                  }}
+                  className="absolute right-3 top-8 w-60 border rounded-lg shadow-2xl py-1 text-xs select-none z-50 divide-y divide-[var(--aura-border)]"
+                >
+                  <div className="py-1">
+                    <div
+                      onClick={() => {
+                        setIsModeMenuOpen(false);
+                        if (isDiffTab) {
+                          const targetPath = activeTab.path;
+                          onCloseTab(activeTab.id);
+                          if (targetPath && onOpenFileByPath) {
+                            onOpenFileByPath(targetPath, true);
+                          }
+                        } else {
+                          activeTab.viewMode = 'editor';
+                          activeTab.isSplitDiff = false;
+                          onSelectTab({ ...activeTab, viewMode: 'editor', isSplitDiff: false });
+                          if (isSplitDiff) {
+                            handleCloseSplitDiff();
+                          }
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
+                        (!activeTab.viewMode || activeTab.viewMode === 'editor') && !isDiffActive ? 'text-[#007acc] font-semibold' : ''
+                      }`}
+                    >
+                      <Code size={13} />
+                      <span>Text Editor (Vim)</span>
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        if (!isDiffActive) {
+                          handleOpenSplitDiff();
+                        }
+                        setIsModeMenuOpen(false);
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
+                        isDiffActive ? 'text-[#007acc] font-semibold' : ''
+                      }`}
+                    >
+                      <GitCompare size={13} />
+                      <span>Split Diff</span>
+                    </div>
                   </div>
 
-                  <div
-                    onClick={() => {
-                      activeTab.viewMode = 'markmap';
-                      onSelectTab({ ...activeTab });
-                      setIsModeMenuOpen(false);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
-                      activeTab.viewMode === 'markmap' ? 'text-[#007acc] font-semibold' : ''
-                    }`}
-                  >
-                    <Network size={13} />
-                    <span>Markmap Mind Map</span>
-                  </div>
+                  {isMarkdownFile && (
+                    <div className="py-1">
+                      <div
+                        onClick={() => {
+                          activeTab.viewMode = 'markdown-preview';
+                          onSelectTab({ ...activeTab });
+                          setIsModeMenuOpen(false);
+                        }}
+                        className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
+                          activeTab.viewMode === 'markdown-preview' ? 'text-[#007acc] font-semibold' : ''
+                        }`}
+                      >
+                        <Eye size={13} />
+                        <span>Markdown Preview Enhanced</span>
+                      </div>
 
-                  <div
-                    onClick={() => {
-                      activeTab.viewMode = 'outline';
-                      onSelectTab({ ...activeTab });
-                      setIsModeMenuOpen(false);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
-                      activeTab.viewMode === 'outline' ? 'text-[#007acc] font-semibold' : ''
-                    }`}
-                  >
-                    <ListTree size={13} />
-                    <span>Article Structure</span>
-                  </div>
+                      <div
+                        onClick={() => {
+                          activeTab.viewMode = 'markmap';
+                          onSelectTab({ ...activeTab });
+                          setIsModeMenuOpen(false);
+                        }}
+                        className={`flex items-center gap-2 px-3 py-1.5 hover:bg-[#007acc]/20 cursor-pointer ${
+                          activeTab.viewMode === 'markmap' ? 'text-[#007acc] font-semibold' : ''
+                        }`}
+                      >
+                        <Network size={13} />
+                        <span>Markmap Mind Map</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="flex-1 relative overflow-hidden">
@@ -1199,82 +1586,48 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                 <MarkmapViewer content={activeTab.content} themeId={themeId} />
               </div>
             </div>
-          ) : activeTab.viewMode === 'outline' ? (
-            <div className="h-full w-full overflow-y-auto p-8 select-text bg-[var(--aura-editor-bg)] text-[var(--aura-editor-fg)]">
-              <div className="max-w-3xl mx-auto space-y-4">
-                <div className="space-y-2 pt-2">
-                  {activeTab.content
-                    .split('\n')
-                    .map((line, lineIdx) => ({ line, lineIdx }))
-                    .filter(({ line }) => line.trim().startsWith('#'))
-                    .map(({ line, lineIdx }) => {
-                      const level = line.match(/^#+/)?.[0].length || 1;
-                      const title = line.replace(/^#+\s*/, '');
-                      return (
-                        <div
-                          key={lineIdx}
-                          style={{ paddingLeft: `${(level - 1) * 20}px` }}
-                          onClick={() => {
-                            activeTab.viewMode = 'editor';
-                            onSelectTab({ ...activeTab });
-                            setTimeout(() => {
-                              if (editorRef.current) {
-                                editorRef.current.revealLineInCenter(lineIdx + 1);
-                                editorRef.current.setPosition({ lineNumber: lineIdx + 1, column: 1 });
-                                editorRef.current.focus();
-                              }
-                            }, 50);
-                          }}
-                          className="flex items-center gap-2 py-1.5 px-3 rounded-lg hover:bg-[#007acc]/15 cursor-pointer text-xs transition-colors border border-transparent hover:border-[#007acc]/40 group"
-                        >
-                          <span
-                            style={{
-                              backgroundColor: level === 1 ? '#007acc' : level === 2 ? '#10b981' : '#f59e0b',
-                            }}
-                            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                          />
-                          <span className={`font-mono text-gray-500 text-[11px]`}>H{level}</span>
-                          <span className="text-[var(--aura-text)] font-medium group-hover:text-[#007acc] truncate">
-                            {title}
-                          </span>
-                          <span className="ml-auto text-[10px] text-gray-500 font-mono opacity-0 group-hover:opacity-100">
-                            line {lineIdx + 1}
-                          </span>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            </div>
-          ) : activeTab.type === 'diff' ? (
-            <div className="h-full w-full flex flex-col bg-[var(--aura-editor-bg)]">
-              <div className="flex-1 overflow-hidden">
-                <DiffEditor
-                  key={activeTab.id}
-                  height="100%"
-                  theme={themeId}
-                  language={activeTab.language || 'plaintext'}
-                  original={activeTab.diffOriginal ?? ''}
-                  modified={activeTab.diffModified ?? activeTab.content}
-                  options={{
-                    fontSize: fontSize || 14,
-                    fontFamily: getEffectiveEditorFont(fontFamily),
-                    readOnly: true,
-                    renderSideBySide: true,
-                    minimap: { enabled: true, scale: 0.75 },
-                    scrollBeyondLastLine: false,
-                    smoothScrolling: true,
-                    lineNumbers: 'on',
-                    lineNumbersMinChars: 4,
-                    glyphMargin: false,
-                    lineDecorationsWidth: 10,
-                    folding: true,
-                    wordWrap: 'on',
-                    originalEditable: false,
-                    contextmenu: false,
-                  }}
-                />
-              </div>
+          ) : (activeTab.type === 'diff' || isSplitDiff) ? (
+            <div className="h-full w-full flex flex-col bg-[var(--aura-editor-bg)] overflow-hidden relative select-none">
+              <DiffEditor
+                key={`diff-${activeTab.id}-${diffViewMode}`}
+                height="100%"
+                theme={themeId}
+                language={activeTab.language}
+                original={(activeTab.type === 'diff' && activeTab.diffOriginal) ? activeTab.diffOriginal : originalDiffText}
+                modified={activeTab.content}
+                onMount={handleDiffMount}
+                options={{
+                  fontSize: fontSize || 14,
+                  fontFamily: getEffectiveEditorFont(fontFamily),
+                  readOnly: false,
+                  originalEditable: false,
+                  renderSideBySide: diffViewMode === 'split',
+                  enableSplitViewResizing: true,
+                  renderIndicators: true,
+                  renderMarginRevertIcon: true,
+                  renderOverviewRuler: true,
+                  renderValidationDecorations: 'off',
+                  diffAlgorithm: 'advanced',
+                  ignoreTrimWhitespace: false,
+                  scrollBeyondLastLine: false,
+                  smoothScrolling: true,
+                  minimap: { enabled: true, scale: 0.75 },
+                  diffWordWrap: 'on',
+                  wordWrap: 'on',
+                  automaticLayout: true,
+                  hideUnchangedRegions: {
+                    enabled: true,
+                    revealLineCount: 20,
+                    minimumLineCount: 10,
+                    contextLineCount: 3,
+                  },
+                  lineNumbers: 'on',
+                  lineNumbersMinChars: 4,
+                  glyphMargin: true,
+                  folding: true,
+                  contextmenu: false,
+                }}
+              />
             </div>
           ) : (
             <div className="h-full w-full flex flex-col">
@@ -1321,7 +1674,18 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                 className="h-5 px-3 border-t text-[11px] font-mono flex items-center justify-between select-none"
               >
                 <span>-- {vimMode} --</span>
-                <span></span>
+                <div className="flex items-center gap-3">
+                  {(diffStats.added > 0 || diffStats.modified > 0 || diffStats.deleted > 0) && (
+                    <span
+                      onClick={handleOpenSplitDiff}
+                      className="text-[10px] text-amber-400 font-mono hover:underline cursor-pointer"
+                      title="点击开启左右分栏对比"
+                    >
+                      Code Diff: +{diffStats.added} -{diffStats.deleted} ~{diffStats.modified}
+                    </span>
+                  )}
+                  <span>{activeTab.language}</span>
+                </div>
               </div>
             </div>
           )

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TopBar } from './components/TopBar';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, AgentSessionItem } from './components/Sidebar';
 import { CodeEditor } from './components/CodeEditor';
 import { TerminalPane } from './components/TerminalPane';
 import { OpenCodeChat } from './components/OpenCodeChat';
@@ -8,6 +8,7 @@ import { QuickPicker } from './components/QuickPicker';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
 import { AddAgentModal } from './components/AddAgentModal';
+import { GitModal } from './components/GitModal';
 import {
   FileItem,
   OpenTab,
@@ -28,13 +29,18 @@ import {
   killTerminalPTY,
   writeTerminalPTY,
   fetchCommitFileDiff,
+  fetchGitHeadContent,
   watchWorkspaceFS,
   isTauri,
   exitApp,
   DetectedAgent,
   fetchCurrentBranch,
+  detectSystemAgents,
+  fetchProjectAgentSessions,
+  updateProjectAgentSessionTitle,
+  deleteProjectAgentSession,
 } from './services/fileService';
-import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check, Move } from 'lucide-react';
+import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check, Move, PanelLeftOpen, PanelLeftClose, Columns } from 'lucide-react';
 import { OpenCodeLogo, AntigravityLogo, CodexLogo, ClaudeLogo } from './components/AgentDropdownMenu';
 
 import { SupportedLang, getInitialLanguage, translations } from './services/i18n';
@@ -259,13 +265,13 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                 >
                   {bt.type === 'terminal' ? (
                     <Terminal size={13} className="text-emerald-400" />
-                  ) : bt.agentCommand === 'agy' ? (
+                  ) : bt.agentCommand?.includes('agy') || bt.agentCommand?.includes('antigravity') ? (
                     <AntigravityLogo size={14} />
-                  ) : bt.agentCommand === 'codex' ? (
+                  ) : bt.agentCommand?.includes('codex') ? (
                     <CodexLogo size={14} />
-                  ) : bt.agentCommand === 'claude' ? (
+                  ) : bt.agentCommand?.includes('claude') ? (
                     <ClaudeLogo size={14} />
-                  ) : bt.agentCommand === 'opencode' || bt.type === 'opencode' ? (
+                  ) : bt.agentCommand?.includes('opencode') || bt.type === 'opencode' ? (
                     <OpenCodeLogo size={14} />
                   ) : (
                     <Bot size={13} className="text-[var(--aura-accent,#007acc)]" />
@@ -377,7 +383,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                   >
                     <TerminalPane
                       id={leaf.id}
-                      cwd={workspaceDir || undefined}
+                      cwd={bt.cwd || workspaceDir || undefined}
                       mode={bt.type === 'terminal' ? 'shell' : (bt.agentCommand || bt.type)}
                       themeId={themeId}
                       fontSize={fontSize}
@@ -434,6 +440,36 @@ export function App() {
     return defaultPlugins;
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [savedSessions, setSavedSessions] = useState<AgentSessionItem[]>([]);
+
+  // Automatically load project agent sessions strictly from SQLite databases (~/.gemini, ~/.local/share/opencode, ~/.codex, ~/.claude)
+  const refreshAgentSessions = useCallback((targetDir?: string) => {
+    const ws = targetDir || workspaceDir;
+    if (!ws) return;
+    fetchProjectAgentSessions(ws).then((dbSessions) => {
+      const mappedDbSessions: AgentSessionItem[] = dbSessions.map((rec) => ({
+        id: rec.id,
+        title: rec.title,
+        agentName: rec.agent_name,
+        agentCommand: rec.agent_command,
+        agentId: rec.agent_id,
+        createdAt: rec.created_at || Date.now(),
+        projectPath: rec.project_path || undefined,
+        projectName: rec.project_name || undefined,
+      }));
+      setSavedSessions(mappedDbSessions);
+      localStorage.setItem(`aura:agentSessions:${ws}`, JSON.stringify(mappedDbSessions));
+    });
+  }, [workspaceDir]);
+
+  useEffect(() => {
+    if (!workspaceDir) return;
+    refreshAgentSessions(workspaceDir);
+
+    const onFocus = () => refreshAgentSessions(workspaceDir);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [workspaceDir, refreshAgentSessions]);
   const [editorFontSize, setEditorFontSize] = useState<number>(() => {
     return Number(localStorage.getItem('aura:fontSize') || '14');
   });
@@ -466,6 +502,23 @@ export function App() {
   activeBottomTabIdRef.current = activeBottomTabId;
   const focusedPaneIdRef = useRef<string>('');
   const [isBottomOpen, setIsBottomOpen] = useState<boolean>(true);
+  const hoveredWindowRef = useRef<1 | 2 | 3>(2);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return;
+      if (el.closest('#terminal-dock-container') || el.closest('#terminal-pane-root')) {
+        hoveredWindowRef.current = 3;
+      } else if (el.closest('#sidebar-container')) {
+        hoveredWindowRef.current = 1;
+      } else if (el.closest('#editor-container-root') || el.closest('.monaco-editor') || el.closest('.monaco-diff-editor')) {
+        hoveredWindowRef.current = 2;
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
   const [bottomHeight, setBottomHeight] = useState<number>(() => {
     const saved = localStorage.getItem('aura:bottomHeight');
     return saved ? Number(saved) : 460;
@@ -486,6 +539,7 @@ export function App() {
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
+  const [isGitModalOpen, setIsGitModalOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string>('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -662,22 +716,25 @@ export function App() {
         const isFocusInWindow3 = activeElem?.closest('.xterm') || activeElem?.closest('#terminal-dock-container') || activeElem?.closest('textarea')?.closest('.xterm');
         const isFocusInWindow1 = activeElem?.closest('#sidebar-container');
 
-        if (isFocusInWindow1) {
-          return;
-        }
-
         if (isFocusInWindow3) {
           setTerminalFontSize((prev) => {
             const next = Math.min(28, prev + 1);
             localStorage.setItem('aura:terminalFontSize', String(next));
-            showToast(`终端字号: ${next}px`);
+            showToast(`终端 (Panel 3) 字号: ${next}px`);
+            return next;
+          });
+        } else if (isFocusInWindow1) {
+          setSidebarFontSize((prev) => {
+            const next = Math.min(24, prev + 1);
+            localStorage.setItem('aura:sidebarFontSize', String(next));
+            showToast(`侧边栏 (Panel 1) 字号: ${next}px`);
             return next;
           });
         } else {
           setEditorFontSize((prev) => {
             const next = Math.min(32, prev + 1);
             localStorage.setItem('aura:fontSize', String(next));
-            showToast(`编辑器字号: ${next}px`);
+            showToast(`编辑器 (Panel 2) 字号: ${next}px`);
             return next;
           });
         }
@@ -692,32 +749,28 @@ export function App() {
         const isFocusInWindow3 = activeElem?.closest('.xterm') || activeElem?.closest('#terminal-dock-container') || activeElem?.closest('textarea')?.closest('.xterm');
         const isFocusInWindow1 = activeElem?.closest('#sidebar-container');
 
-        if (isFocusInWindow1) {
-          return;
-        }
-
         if (isFocusInWindow3) {
           setTerminalFontSize((prev) => {
             const next = Math.max(9, prev - 1);
             localStorage.setItem('aura:terminalFontSize', String(next));
-            showToast(`终端字号: ${next}px`);
+            showToast(`终端 (Panel 3) 字号: ${next}px`);
+            return next;
+          });
+        } else if (isFocusInWindow1) {
+          setSidebarFontSize((prev) => {
+            const next = Math.max(10, prev - 1);
+            localStorage.setItem('aura:sidebarFontSize', String(next));
+            showToast(`侧边栏 (Panel 1) 字号: ${next}px`);
             return next;
           });
         } else {
           setEditorFontSize((prev) => {
             const next = Math.max(9, prev - 1);
             localStorage.setItem('aura:fontSize', String(next));
-            showToast(`编辑器字号: ${next}px`);
+            showToast(`编辑器 (Panel 2) 字号: ${next}px`);
             return next;
           });
         }
-        return;
-      }
-
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        e.stopPropagation();
-        handleToggleSidebar();
         return;
       }
 
@@ -816,7 +869,11 @@ export function App() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
   }, []);
 
-  const handleSelectFile = async (file: FileItem, viewMode?: 'editor' | 'markdown-preview' | 'markmap' | 'outline') => {
+  const handleSelectFile = async (
+    file: FileItem,
+    viewMode?: 'editor' | 'markdown-preview' | 'markmap' | 'outline',
+    forceNormalEditor?: boolean
+  ) => {
     if (file.isDirectory) return;
 
     let targetTab: OpenTab | undefined = undefined;
@@ -828,8 +885,47 @@ export function App() {
     const isMarkdown = file.name.toLowerCase().endsWith('.md');
     const resolvedMode = viewMode || (isMarkdown ? ((localStorage.getItem('aura:defaultMarkdownMode') as any) || 'editor') : 'editor');
 
+    const content = await fetchFileContent(file.path);
+
+    // Check if the file is modified compared to Git HEAD
+    let isModified = file.gitStatus === 'M';
+    let headContent = '';
+    try {
+      headContent = await fetchGitHeadContent(file.path, workspaceDir);
+      if (headContent && headContent.trim() !== '' && headContent !== content) {
+        isModified = true;
+      }
+    } catch (e) {
+      console.error('[fetchGitHeadContent on open]', e);
+    }
+
     if (targetTab) {
-      if (viewMode && (targetTab as OpenTab).viewMode !== viewMode) {
+      if (forceNormalEditor) {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.path === file.path
+              ? {
+                  ...t,
+                  isSplitDiff: false,
+                  viewMode: 'editor',
+                }
+              : t
+          )
+        );
+      } else if (isModified && !(targetTab as OpenTab).isSplitDiff) {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.path === file.path
+              ? {
+                  ...t,
+                  isSplitDiff: true,
+                  diffOriginal: headContent || t.diffOriginal,
+                  viewMode: viewMode || t.viewMode,
+                }
+              : t
+          )
+        );
+      } else if (viewMode && (targetTab as OpenTab).viewMode !== viewMode) {
         setTabs((prev) =>
           prev.map((t) => (t.path === file.path ? { ...t, viewMode } : t))
         );
@@ -838,7 +934,6 @@ export function App() {
       return;
     }
 
-    const content = await fetchFileContent(file.path);
     const fname = file.name.toLowerCase();
     let language = 'plaintext';
 
@@ -864,6 +959,8 @@ export function App() {
       content,
       language,
       viewMode: resolvedMode,
+      isSplitDiff: forceNormalEditor ? false : isModified,
+      diffOriginal: headContent || '',
     };
     editorContentMap.current[file.path] = content;
 
@@ -883,13 +980,21 @@ export function App() {
     }, 40);
   };
 
-  const handleOpenFileByPath = async (filePath: string) => {
-    const fileName = filePath.split('/').pop() || filePath;
-    await handleSelectFile({
-      name: fileName,
-      path: filePath,
-      isDirectory: false,
-    });
+  const handleOpenFileByPath = async (filePath: string, forceNormalEditor?: boolean) => {
+    let resolvedPath = filePath;
+    if (workspaceDir && !filePath.startsWith('/') && !filePath.startsWith('\\')) {
+      resolvedPath = `${workspaceDir}/${filePath}`;
+    }
+    const fileName = resolvedPath.split('/').pop() || resolvedPath;
+    await handleSelectFile(
+      {
+        name: fileName,
+        path: resolvedPath,
+        isDirectory: false,
+      },
+      forceNormalEditor ? 'editor' : undefined,
+      forceNormalEditor
+    );
   };
 
   const handleOpenCommitDiff = async (commitHash: string, filePath: string) => {
@@ -1119,7 +1224,7 @@ export function App() {
     setIsBottomOpen(true);
     const count = bottomTabsRef.current.filter((t) => t.type === 'opencode').length;
     const id = `opencode-${Date.now()}`;
-    const title = count === 0 ? 'OpenCode' : `OpenCode ${count + 1}`;
+    const title = count === 0 ? 'OpenCode V2' : `OpenCode V2 ${count + 1}`;
     const newBottomTab: BottomTab = { id, type: 'opencode', title };
     setBottomTabs((prev) => [...prev, newBottomTab]);
     setActiveBottomTabId(id);
@@ -1320,6 +1425,111 @@ export function App() {
       return remaining;
     });
   }, []);
+
+  // Track agent sessions for the current project
+  const agentSessions: AgentSessionItem[] = useMemo(() => {
+    return savedSessions.map((s) => ({
+      ...s,
+      isActive: isBottomOpen && activeBottomTabId === s.id,
+    }));
+  }, [savedSessions, isBottomOpen, activeBottomTabId]);
+
+  const handleSelectSession = useCallback((session: AgentSessionItem) => {
+    const existing = bottomTabsRef.current.find((t) => t.id === session.id);
+    setIsBottomOpen(true);
+    if (existing) {
+      setActiveBottomTabId(existing.id);
+      const leafPanes = collectLeafPaneIds(existing.rootLayout || { type: 'leaf', id: existing.id });
+      focusActiveTerminal(leafPanes[0] || existing.id);
+    } else {
+      let resumeCmd = session.agentCommand || 'agy';
+      const cmdLower = (session.agentCommand || '').toLowerCase();
+      const idLower = (session.agentId || '').toLowerCase();
+      const nameLower = (session.agentName || '').toLowerCase();
+
+      if (idLower === 'antigravity' || cmdLower.includes('agy') || nameLower.includes('antigravity')) {
+        // agy --conversation <id> (or agy -c) to resume exact conversation and continue chatting
+        resumeCmd = session.id ? `agy --conversation ${session.id}` : 'agy -c';
+      } else if (idLower === 'opencode' || cmdLower.includes('opencode') || nameLower.includes('opencode')) {
+        // opencode --session <id>
+        resumeCmd = session.id ? `opencode --session ${session.id}` : 'opencode -c';
+      } else if (idLower === 'claude' || cmdLower.includes('claude') || nameLower.includes('claude')) {
+        resumeCmd = session.id ? `claude --resume ${session.id}` : 'claude';
+      } else if (idLower === 'codex' || cmdLower.includes('codex') || nameLower.includes('codex')) {
+        resumeCmd = session.id ? `codex resume ${session.id}` : 'codex';
+      }
+
+      const sessionCwd = session.projectPath || workspaceDir;
+
+      const newTab: BottomTab = {
+        id: session.id,
+        type: 'agent',
+        title: session.title,
+        agentCommand: resumeCmd,
+        cwd: sessionCwd,
+      };
+      setBottomTabs((prev) => [...prev, newTab]);
+      setActiveBottomTabId(session.id);
+      focusActiveTerminal(session.id);
+    }
+  }, [focusActiveTerminal, workspaceDir]);
+
+  const handleSelectProjectFromSession = useCallback((newProjectDir: string) => {
+    if (newProjectDir && newProjectDir !== workspaceDirRef.current) {
+      setWorkspaceDir(newProjectDir);
+      workspaceDirRef.current = newProjectDir;
+      localStorage.setItem('aura:workspaceDir', newProjectDir);
+      loadWorkspace(newProjectDir);
+      // NOTE: Do not touch bottom tabs! Keep original sessions and terminal tabs open as requested.
+      showToast(`已切换目录: ${newProjectDir.split('/').filter(Boolean).pop()}`);
+    }
+  }, []);
+
+  const handleRenameSession = useCallback((id: string, newTitle: string) => {
+    setSavedSessions((prev) => {
+      const next = prev.map((s) => (s.id === id ? { ...s, title: newTitle } : s));
+      if (workspaceDir) {
+        localStorage.setItem(`aura:agentSessions:${workspaceDir}`, JSON.stringify(next));
+      }
+      return next;
+    });
+    setBottomTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, title: newTitle } : t))
+    );
+    if (workspaceDir) {
+      updateProjectAgentSessionTitle(workspaceDir, id, newTitle)
+        .then(() => {
+          refreshAgentSessions(workspaceDir);
+        })
+        .catch((err) => {
+          console.error('Failed to sync session rename to SQLite:', err);
+        });
+    }
+  }, [workspaceDir, refreshAgentSessions]);
+
+  const handleDeleteSession = useCallback((sessionId: string) => {
+    handleCloseBottomTab(sessionId, { stopPropagation: () => {} } as any);
+    setSavedSessions((prev) => {
+      const next = prev.filter((s) => s.id !== sessionId);
+      if (workspaceDir) {
+        localStorage.setItem(`aura:agentSessions:${workspaceDir}`, JSON.stringify(next));
+      }
+      return next;
+    });
+    if (workspaceDir) {
+      deleteProjectAgentSession(workspaceDir, sessionId)
+        .then(() => {
+          refreshAgentSessions(workspaceDir);
+        })
+        .catch((err) => {
+          console.error('Failed to delete session from SQLite:', err);
+        });
+    }
+  }, [handleCloseBottomTab, workspaceDir, refreshAgentSessions]);
+
+  const handleNewAgentSession = useCallback(() => {
+    handleOpenOpenCodeTab();
+  }, [handleOpenOpenCodeTab]);
 
   const handleTogglePlugin = (id: string) => {
     setPlugins((prev) => {
@@ -1552,13 +1762,17 @@ export function App() {
         isBottomOpen={isBottomOpen}
         isSidebarOpen={isSidebarOpen}
         sidebarWidth={sidebarWidth}
+        isResizing={isResizing}
         onChangeView={setActiveView}
+        onChangeWorkspaceDir={handleOpenWorkspaceDialog}
         onOpenOpenCode={handleOpenOpenCodeTab}
         onSelectAgent={handleLaunchAgent}
         onRunInstallCommand={handleRunInstallCommand}
         onOpenAddAgentModal={() => setIsAddAgentModalOpen(true)}
+        onToggleSidebar={handleToggleSidebar}
         onToggleBottom={handleToggleTerminalBottom}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenGitModal={() => setIsGitModalOpen(true)}
       />
 
       <div className={`flex flex-1 p-0.5 gap-0 overflow-hidden ${isResizing ? 'select-none pointer-events-auto' : ''}`}>
@@ -1581,8 +1795,16 @@ export function App() {
             plugins={plugins}
             activeView={activeView}
             workspaceDir={workspaceDir}
+            agentSessions={agentSessions}
+            sidebarWidth={sidebarWidth}
+            onSetSidebarWidth={(w) => {
+              setSidebarWidth(w);
+              lastOpenedSidebarWidth.current = w;
+              localStorage.setItem('aura:sidebarWidth', String(w));
+            }}
             lang={lang}
             fontSize={sidebarFontSize}
+            fontFamily={editorFontFamily}
             onSelectFile={handleSelectFile}
             onTogglePlugin={handleTogglePlugin}
             onInstallPlugin={handleInstallPlugin}
@@ -1593,6 +1815,16 @@ export function App() {
             onOpenDiff={handleOpenCommitDiff}
             onRefreshWorkspace={() => loadWorkspace(workspaceDir)}
             onCollapseSidebar={handleToggleSidebar}
+            onSelectSession={handleSelectSession}
+            onSelectProject={handleSelectProjectFromSession}
+            onCloseSession={handleDeleteSession}
+            onRenameSession={handleRenameSession}
+            onDeleteSession={handleDeleteSession}
+            onNewAgentSession={handleNewAgentSession}
+            onSelectAgent={handleLaunchAgent}
+            onRunInstallCommand={handleRunInstallCommand}
+            onOpenAddAgentModal={() => setIsAddAgentModalOpen(true)}
+            onOpenSettings={() => setIsSettingsOpen(true)}
           />
         </div>
 
@@ -1614,6 +1846,21 @@ export function App() {
               : '1号窗口已收起：向右拖动或双击此处重新展开'
           }
         >
+          {/* When sidebar is collapsed: small expand-to-the-right button on the right side of the splitter */}
+          {!isSidebarOpen && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleSidebar();
+              }}
+              title="向右展开1号窗口 (Expand Panel 1)"
+              className="absolute left-full top-2.5 ml-1 z-40 p-1 rounded-md bg-[var(--aura-card-bg,#252526)] border border-[var(--aura-border)] text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-[#007acc]/15 hover:border-[var(--aura-accent,#007acc)] shadow-md transition-all cursor-pointer flex items-center justify-center"
+            >
+              <PanelLeftOpen size={13} />
+            </button>
+          )}
+
           {/* 3 dots shifted slightly above vertical center for ergonomic visual alignment */}
           <div className="flex flex-col items-center gap-1 -translate-y-12">
             <div className={`w-0.5 h-0.5 rounded-full transition-colors ${resizingType === 'sidebar' || resizingType === 'corner' ? 'bg-white' : isCornerHovered ? 'bg-[#007acc]' : 'bg-gray-500/50 group-hover:bg-[#007acc]'}`} />
@@ -1637,12 +1884,14 @@ export function App() {
           )}
 
           <div
+            id="editor-container-root"
+            onMouseEnter={() => { hoveredWindowRef.current = 2; }}
             style={{
               backgroundColor: 'var(--aura-editor-bg)',
               color: 'var(--aura-editor-fg)',
               borderColor: 'var(--aura-border)'
             }}
-            className="flex-1 overflow-hidden min-h-[40px] rounded-md border shadow-xs"
+            className="flex-1 flex flex-col overflow-hidden min-h-[40px] rounded-md border shadow-xs"
           >
             <CodeEditor
               activeTab={activeTab}
@@ -1663,6 +1912,8 @@ export function App() {
               onUninstallPlugin={handleUninstallPlugin}
               workspaceDir={workspaceDir}
               onOpenFileByPath={handleOpenFileByPath}
+              isSidebarOpen={isSidebarOpen}
+              onToggleSidebar={handleToggleSidebar}
             />
           </div>
 
@@ -1712,6 +1963,10 @@ export function App() {
         workspaceDir={workspaceDir}
         lang={lang}
         themeId={themeId}
+        plugins={plugins}
+        onTogglePlugin={handleTogglePlugin}
+        onInstallPlugin={handleInstallPlugin}
+        onUninstallPlugin={handleUninstallPlugin}
         onClose={() => setIsSettingsOpen(false)}
         onChangeWorkspace={handleOpenWorkspaceDialog}
         onChangeLang={setLang}
@@ -1743,6 +1998,17 @@ export function App() {
         isOpen={isAddAgentModalOpen}
         onClose={() => setIsAddAgentModalOpen(false)}
         onAgentAdded={(agent) => handleLaunchAgent(agent)}
+      />
+
+      <GitModal
+        isOpen={isGitModalOpen}
+        workspaceDir={workspaceDir}
+        gitBranch={gitBranch}
+        commits={commits}
+        files={files}
+        onClose={() => setIsGitModalOpen(false)}
+        onOpenDiff={handleOpenCommitDiff}
+        onSelectFile={handleSelectFile}
       />
 
       {/* Floating in-app Toast Notification */}
