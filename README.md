@@ -22,56 +22,95 @@
 **Aura IDE** is a high-performance desktop coding environment tailored for macOS and modern workstations. Designed with an ultra-lightweight memory footprint (30MB ~ 80MB) and near-instantaneous startup, Aura merges the power of **VS Code's Monaco Editor**, **Vim modal editing**, **native VS Code SCM history swimlanes**, and **POSIX PTY terminals** alongside **OpenCode CLI agent pairing**.
 
 ```text
-+---------------------+---------------------------------------------------------+
-|                     | [Tab 1] [Tab 2] ...                   [◫] [⬒] | [🤖] [⚙️]|
-|                     |---------------------------------------------------------|
-|                     |                                                         |
-|     Window 1        |                       Window 2                          |
-|  (Left File Tree,   |                 (Top-Right Editor)                      |
-|   Git Swimlanes &   |            [Monaco + Vim Mode + DiffEditor]             |
-|   AI Sessions)      |                                                         |
-|   (Full Height)     +---------------------------------------------------------+
-|                     | [Terminal 1] [OpenCode 1] [+]                           |
-|                     |---------------------------------------------------------|
-|                     |                       Window 3                          |
-|                     |                (Bottom-Right Terminal)                  |
-|                     |          [Native PTY / OpenCode CLI / Process Kill]     |
-+---------------------+---------------------------------------------------------+
++---------------------+---------------------------------------------------------------+
+|  Window 1 (Sidebar) | TopBar: [Project] [🌿 branch]     [◫] [⬒] | [🤖] [🌿 Git] [⚙️]  |
+|  [Dir] | [Session]  |---------------------------------------------------------------|
+|  - File Explorer    |                       Window 2                                |
+|  - Git Swimlanes    |                 (Top-Right Editor)                            |
+|  - SCM Changes      |            [Monaco + Vim Mode + DiffEditor]                   |
+|  -----------------  |                                                               |
+|  - AI Sessions      +---------------------------------------------------------------+
+|  - Project Groups   | [Terminal 1] [OpenCode 1] [+]                                 |
+|  - Emerald Live Dot |---------------------------------------------------------------|
+|  - 2-Step Removal   |                       Window 3                                |
+|                     |                (Bottom-Right Terminal)                        |
+|                     |          [Native PTY / OpenCode CLI / Process Kill]           |
++---------------------+---------------------------------------------------------------+
 ```
 
 ---
 
 ## ⚡ Key Highlights (v1.1.0)
 
-### 🗂️ Window 1 (File Explorer, Git SCM & AI Sessions)
-- **Frameless Full-Height Sidebar**: Smooth width resizing with dual-sided drag handles;
-- **Mouse Multi-Selection**: Supports `Cmd`/`Ctrl` toggling, `Shift` continuous range selection, and `Esc` to clear;
-- **Full Keyboard Vim Navigation**: Navigate tree with `j`/`k`, expand with `o`, create files/folders with `a`, rename with `r`, delete with `d`;
-- **Native VS Code SCM Swimlanes**: Ported from VS Code's official `scmHistory.ts`, with branch-aligned commit dots and continuous downward swimlanes on expanded details;
-- **Sub-Second Git Status**: Real-time background polling and instant save-time refresh, badge strictly reflects uncommitted changes (`> 0`);
-- **AI Session Manager**: Group OpenCode sessions by project with path normalization and deduplication, live status indicators (emerald green dot), and 2-step safe project removal (preserves database records).
+### 🗂️ Window 1: Dual-Section Sidebar (`Dir` & `Session`)
 
-### 📝 Window 2 (Editor & Diff Comparison)
+Window 1 provides a unified, full-height left sidebar split into two interactive sections with a draggable divider:
+
+#### 📁 `Dir` Section (Workspace Explorer & Git SCM)
+- **Workspace File Explorer**: Deep directory tree with quick actions (`+` New File, New Folder, Collapse All, Refresh Workspace);
+- **Full Keyboard Vim Navigation**: Navigate tree with `j`/`k` (or arrow keys), expand/open with `o` or `Enter`, create with `a` (`name.ts` or `dir/`), rename with `r`, delete with `d` (modal confirmation), and copy absolute path with `yyp`;
+- **Mouse Multi-Selection**: Supports `Cmd`/`Ctrl` single-item toggle, `Shift` continuous range selection, and `Esc` to clear all selections;
+- **Native VS Code SCM Swimlanes**: Exact port of VS Code's official `scmHistory.ts` algorithm with branch-aligned commit dots and continuous downward swimlanes on expanded details;
+- **Sub-Second Git Status**: Real-time 1.5s background polling and instant save-time refresh, badge strictly reflects uncommitted changes (`> 0`).
+
+#### 💬 `Session` Section (OpenCode AI Agent Sessions)
+- **Project-Grouped Sessions**: Automatically groups AI agent sessions by project workspace with path normalization and deduplication;
+- **Active Session Indicator**: Distinct emerald-green glowing dot (`bg-emerald-500`) highlights the currently active project and session;
+- **Favorites & Star Management**: Star / favorite projects and sessions for quick top-of-list access;
+- **2-Step Safe Project Removal**: Remove projects from the list with a 2-step confirmation modal (`Enter` to confirm, `Esc` to cancel), explicitly ensuring database sessions are preserved and will reload automatically upon reopening;
+- **Context Menu Actions**: Right-click to rename session titles, delete sessions with confirmation, and toggle favorites;
+- **Draggable Vertical Splitter**: Interactive horizontal split handle between `Dir` and `Session` allowing smooth custom height allocation.
+
+---
+
+### 🌐 TopBar: Git Status, Agent Hub & Window Controls
+
+The unified title bar delivers essential project telemetry and quick global controls:
+
+- **Project & Active Git Branch Status**:
+  - Displays the active workspace project name aligned on the left;
+  - Displays the current Git branch badge (e.g. `🌿 main`, `🌿 feature/v1.1`); clicking the branch badge instantly opens the **Git Management Modal**;
+- **`Git` Management Modal Button**:
+  - Dedicated `Git` button in the top-right header providing one-click access to the full Git dialog (`GitModal`);
+  - Inspect staged/unstaged changes, review side-by-side diffs, write commit messages, and examine commit graph swimlanes;
+- **AI Agent Bot Hub**:
+  - One-click Agent Bot selector dropdown to launch and switch active agents (`OpenCode`, `Claude Code`, custom agents) in Window 3;
+  - Install custom agent commands with seamless execution;
+- **VS Code-Style Window Layout Controls**:
+  - `PrimarySidebarIcon` button: Click to show/hide Window 1 (`Dir` & `Session`);
+  - `BottomPanelIcon` button: Click to show/hide Window 3 (Terminal / AI Dock);
+  - Subtle vertical divider separating window controls from Agent and Git actions;
+- **Preferences Button (`Settings`)**: One-click or `Cmd+,` to open the full preferences dialog.
+
+---
+
+### 📝 Window 2: Editor & Diff Comparison
+
 - **Monaco Editor Core**: VS Code Monaco Editor with full syntax highlighting, bracket matching, and theme synchronization;
 - **Dual-Mode Vim Editing**:
   - **Normal Mode**: Solid block cursor, `ww` to fast-save, `qq` to close current tab, standard Vim motions (`hjkl`, `w`, `b`, `dd`, `yy`, `p`);
   - **Insert Mode**: Smooth vertical line cursor with full autocomplete;
 - **Side-by-Side & Unified Diff Comparison**:
   - Live Git diff stats badge (`+added`, `-deleted`, `~modified`);
-  - Toggle between Side-by-Side (`Split`) and Inline (`Unified`) diffs;
-  - Switch back to full `Text Editor (Vim)` directly from the comparison dropdown menu;
+  - Segmented toggle between Side-by-Side (`Split`) and Inline (`Unified`) diffs;
+  - Seamless one-click return to full `Text Editor (Vim)` directly from the comparison dropdown menu;
 - **Smart Markdown View Filtering**:
   - `Markdown Preview Enhanced` and `Markmap Mind Map` are displayed exclusively for Markdown files (`.md` / `.markdown`), keeping source code menus clean and uncluttered;
   - Collapsible Table of Contents (TOC) with synchronized scroll and heading jump.
 
-### 💻 Window 3 (Terminal & AI Dock)
+---
+
+### 💻 Window 3: Terminal & AI Dock
+
 - **Native POSIX PTY Shell**: Direct connection to `/bin/zsh -l`, evaluating local `~/.zshrc` themes, fonts, and powerline glyphs without distortion;
 - **OpenCode CLI Pairing**: Single-click or `Shift+Cmd+M` launches real interactive `opencode` coding assistant sessions;
 - **Recursive Process Tree Cleanup**: Closing a terminal tab recursively kills child processes via `libc::kill(-pid, SIGKILL)` and `pkill -9 -P`, freeing all RAM & CPU immediately;
 - **Drag-and-Drop Path Pasting**: Drag files or folders from Window 1 directly into the terminal to paste absolute paths.
 
-### 🎨 Global Polish & Settings
-- **Top-Right Layout Toggles**: Modern VS Code-style panel buttons for Window 1 and Window 3 toggling, separated from the Agent Bot dropdown with a fine vertical divider;
+---
+
+### 🎨 Settings & Customization
+
 - **Custom Modern Settings (`CustomSelect`)**: Redesigned dropdown select cards with smooth animations, custom borders, clean typography, and zero clunky native borders or horizontal divider lines;
 - **Live Theme Engine**: High-contrast modern themes (`Light 2026`, `VS Code Dark Modern`, `Gruvbox Dark`, `One Dark Pro`, `Nord`, `Cyberpunk Neon`) with dynamic syntax and shell styling;
 - **Typography & Font Previews**: Live typeface previews for `JetBrains Mono`, `Fira Code`, `Hack Nerd Font`, `SF Mono`, `Menlo`, `Cascadia Code`, and custom installed fonts;
