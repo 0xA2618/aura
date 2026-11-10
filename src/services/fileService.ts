@@ -507,6 +507,25 @@ export async function fetchCommitFileDiff(hash: string, filePath: string, repoPa
   return { original: '', modified: '' };
 }
 
+export async function executeGitCommit(message: string, repoPath?: string): Promise<string> {
+  if (isTauri) {
+    return await invoke<string>('git_commit', {
+      workspace: repoPath || null,
+      message,
+    });
+  }
+  return 'Mock commit successful';
+}
+
+export async function executeGitPush(repoPath?: string): Promise<string> {
+  if (isTauri) {
+    return await invoke<string>('git_push', {
+      workspace: repoPath || null,
+    });
+  }
+  return 'Mock push successful';
+}
+
 // System AI Agent Detection
 export interface DetectedAgent {
   id: string;
@@ -727,4 +746,58 @@ export async function onTerminalExit(id: string, callback: () => void): Promise<
     return () => {};
   }
   return () => {};
+}
+
+export interface ProjectAgentSession {
+  id: string;
+  title: string;
+  agent_name: string;
+  agent_command: string;
+  agent_id: string;
+  created_at?: number | null;
+  project_path?: string | null;
+  project_name?: string | null;
+}
+
+export async function fetchProjectAgentSessions(workspaceDir: string): Promise<ProjectAgentSession[]> {
+  if (isTauri) {
+    try {
+      return await invoke<ProjectAgentSession[]>('system_fetch_project_agent_sessions', { workspaceDir });
+    } catch (e) {
+      console.error('[Rust system_fetch_project_agent_sessions error]', e);
+      return [];
+    }
+  }
+  return [];
+}
+
+export async function updateProjectAgentSessionTitle(workspaceDir: string, sessionId: string, newTitle: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('system_update_project_agent_session_title', {
+        workspaceDir,
+        sessionId,
+        newTitle,
+      });
+    } catch (e) {
+      console.error('[Rust system_update_project_agent_session_title error]', e);
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function deleteProjectAgentSession(workspaceDir: string, sessionId: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('system_delete_project_agent_session', {
+        workspaceDir,
+        sessionId,
+      });
+    } catch (e) {
+      console.error('[Rust system_delete_project_agent_session error]', e);
+      return false;
+    }
+  }
+  return false;
 }

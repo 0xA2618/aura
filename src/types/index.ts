@@ -26,6 +26,8 @@ export interface OpenTab {
   type?: 'file' | 'extension' | 'diff';
   diffOriginal?: string;
   diffModified?: string;
+  isSplitDiff?: boolean;
+  diffViewMode?: 'split' | 'unified';
   viewMode?: 'editor' | 'markdown-preview' | 'markmap' | 'outline';
   extensionData?: PluginManifest;
 }
@@ -51,6 +53,7 @@ export interface BottomTab {
   type: BottomTabType;
   title: string;
   agentCommand?: string;
+  cwd?: string;
   rootLayout?: PaneLayoutNode;
 }
 

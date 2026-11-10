@@ -568,6 +568,65 @@ fn git_get_head_content(workspace: Option<String>, file_path: String) -> Result<
     }
 }
 
+#[tauri::command]
+fn git_commit(workspace: Option<String>, message: String) -> Result<String, String> {
+    let target = match workspace {
+        Some(p) if !p.is_empty() && Path::new(&p).exists() => PathBuf::from(p),
+        _ => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+
+    let msg = message.trim();
+    if msg.is_empty() {
+        return Err("Commit message cannot be empty".to_string());
+    }
+
+    let add_output = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&target)
+        .output()
+        .map_err(|e| format!("Failed to run git add: {}", e))?;
+
+    if !add_output.status.success() {
+        return Err(String::from_utf8_lossy(&add_output.stderr).to_string());
+    }
+
+    let commit_output = Command::new("git")
+        .args(["commit", "-m", msg])
+        .current_dir(&target)
+        .output()
+        .map_err(|e| format!("Failed to run git commit: {}", e))?;
+
+    if !commit_output.status.success() {
+        return Err(String::from_utf8_lossy(&commit_output.stderr).to_string());
+    }
+
+    Ok(String::from_utf8_lossy(&commit_output.stdout).to_string())
+}
+
+#[tauri::command]
+fn git_push(workspace: Option<String>) -> Result<String, String> {
+    let target = match workspace {
+        Some(p) if !p.is_empty() && Path::new(&p).exists() => PathBuf::from(p),
+        _ => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+
+    let push_output = Command::new("git")
+        .args(["push"])
+        .current_dir(&target)
+        .output()
+        .map_err(|e| format!("Failed to run git push: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&push_output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&push_output.stderr).to_string();
+
+    if !push_output.status.success() {
+        let err_msg = if stderr.is_empty() { stdout } else { stderr };
+        return Err(err_msg);
+    }
+
+    Ok(if stdout.is_empty() { stderr } else { stdout })
+}
+
 // ----------------- Native Agent Detection & Resolution -----------------
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -774,6 +833,477 @@ fn system_register_custom_agent(name: String, raw_path: String) -> Result<Detect
     })
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AgentSessionRecord {
+    pub id: String,
+    pub title: String,
+    pub agent_name: String,
+    pub agent_command: String,
+    pub agent_id: String,
+    pub created_at: Option<i64>,
+    pub project_path: Option<String>,
+    pub project_name: Option<String>,
+}
+
+fn extract_project_from_uris(uris_str: &str) -> (Option<String>, Option<String>) {
+    let clean = uris_str.trim();
+    if clean.is_empty() {
+        return (None, None);
+    }
+    if let Ok(arr) = serde_json::from_str::<Vec<String>>(clean) {
+        if let Some(first) = arr.first() {
+            let path_str = if first.starts_with("file://") {
+                first.trim_start_matches("file://")
+            } else {
+                first.as_str()
+            };
+            if !path_str.is_empty() {
+                let p = Path::new(path_str);
+                let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Project".to_string());
+                return (Some(path_str.to_string()), Some(name));
+            }
+        }
+    }
+    if let Some(idx) = clean.find("file://") {
+        let after = &clean[idx + 7..];
+        let end_idx = after.find('"').or_else(|| after.find('\'')).or_else(|| after.find(']')).unwrap_or(after.len());
+        let path_str = &after[..end_idx];
+        if !path_str.is_empty() {
+            let p = Path::new(path_str);
+            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Project".to_string());
+            return (Some(path_str.to_string()), Some(name));
+        }
+    }
+    (None, None)
+}
+
+fn extract_project_from_dir(dir_str: &str) -> (Option<String>, Option<String>) {
+    let clean = dir_str.trim();
+    if clean.is_empty() {
+        return (None, None);
+    }
+    let p = Path::new(clean);
+    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Project".to_string());
+    (Some(clean.to_string()), Some(name))
+}
+
+fn run_sqlite_json_query(db_path: &Path, query: &str) -> Option<serde_json::Value> {
+    if !db_path.exists() {
+        return None;
+    }
+    let sqlite_cmd = if Path::new("/usr/bin/sqlite3").exists() {
+        "/usr/bin/sqlite3"
+    } else {
+        "sqlite3"
+    };
+    let output = Command::new(sqlite_cmd)
+        .args([db_path.to_str()?, "-json", query])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        return Some(serde_json::Value::Array(Vec::new()));
+    }
+    serde_json::from_str(&stdout).ok()
+}
+
+#[tauri::command]
+fn system_fetch_project_agent_sessions(workspace_dir: String) -> Result<Vec<AgentSessionRecord>, String> {
+    let ws_clean = workspace_dir.trim().trim_end_matches('/');
+    let ws_path = if !ws_clean.is_empty() {
+        let p = PathBuf::from(ws_clean);
+        p.canonicalize().unwrap_or(p)
+    } else {
+        PathBuf::new()
+    };
+    let ws_str = ws_path.to_string_lossy().to_string();
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Yang".to_string());
+    let mut sessions: Vec<AgentSessionRecord> = Vec::new();
+
+    // 1. Antigravity-CLI SQLite DB
+    let agy_db = PathBuf::from(&home).join(".gemini/antigravity-cli/conversation_summaries.db");
+    if agy_db.exists() {
+        let query = "SELECT conversation_id, title, preview, workspace_uris, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC";
+        if let Some(val) = run_sqlite_json_query(&agy_db, query) {
+            if let Some(arr) = val.as_array() {
+                for item in arr {
+                    let id = item.get("conversation_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if id.is_empty() {
+                        continue;
+                    }
+                    let uris_str = item.get("workspace_uris").and_then(|v| v.as_str()).unwrap_or("");
+                    let (proj_path, proj_name) = extract_project_from_uris(uris_str);
+
+                    let raw_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let raw_preview = item.get("preview").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let title = if !raw_title.is_empty() {
+                        raw_title.to_string()
+                    } else if !raw_preview.is_empty() {
+                        raw_preview.to_string()
+                    } else {
+                        "Google Antigravity Session".to_string()
+                    };
+
+                    sessions.push(AgentSessionRecord {
+                        id,
+                        title,
+                        agent_name: "Google Antigravity".to_string(),
+                        agent_command: "agy".to_string(),
+                        agent_id: "antigravity".to_string(),
+                        created_at: None,
+                        project_path: proj_path,
+                        project_name: proj_name,
+                    });
+                }
+            }
+        }
+    }
+
+    // 2. OpenCode SQLite DB
+    let oc_db = PathBuf::from(&home).join(".local/share/opencode/opencode.db");
+    if oc_db.exists() {
+        let query = "SELECT id, title, slug, directory, time_updated FROM session_v2 ORDER BY time_updated DESC";
+        if let Some(val) = run_sqlite_json_query(&oc_db, query) {
+            if let Some(arr) = val.as_array() {
+                for item in arr {
+                    let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if id.is_empty() {
+                        continue;
+                    }
+                    let dir = item.get("directory").and_then(|v| v.as_str()).unwrap_or("");
+                    let (proj_path, proj_name) = extract_project_from_dir(dir);
+
+                    let raw_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let slug = item.get("slug").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let title = if !raw_title.is_empty() {
+                        raw_title.to_string()
+                    } else if !slug.is_empty() {
+                        slug.to_string()
+                    } else {
+                        "OpenCode Session".to_string()
+                    };
+                    let time_updated = item.get("time_updated").and_then(|v| v.as_i64());
+
+                    sessions.push(AgentSessionRecord {
+                        id,
+                        title,
+                        agent_name: "OpenCode".to_string(),
+                        agent_command: "opencode".to_string(),
+                        agent_id: "opencode".to_string(),
+                        created_at: time_updated,
+                        project_path: proj_path,
+                        project_name: proj_name,
+                    });
+                }
+            }
+        }
+    }
+
+    // 3. Codex SQLite DB (~/.codex/state_5.sqlite or state_*.sqlite)
+    let codex_dir = PathBuf::from(&home).join(".codex");
+    if codex_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&codex_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let fname = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                if fname.starts_with("state_") && fname.ends_with(".sqlite") {
+                    let query = "SELECT id, title, first_user_message, preview, cwd, updated_at FROM threads ORDER BY updated_at DESC";
+                    if let Some(val) = run_sqlite_json_query(&path, query) {
+                        if let Some(arr) = val.as_array() {
+                            for item in arr {
+                                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                if id.is_empty() {
+                                    continue;
+                                }
+                                let cwd = item.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
+                                let (proj_path, proj_name) = extract_project_from_dir(cwd);
+
+                                let raw_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").trim();
+                                let first_msg = item.get("first_user_message").and_then(|v| v.as_str()).unwrap_or("").trim();
+                                let preview = item.get("preview").and_then(|v| v.as_str()).unwrap_or("").trim();
+                                let title = if !raw_title.is_empty() {
+                                    raw_title.to_string()
+                                } else if !first_msg.is_empty() {
+                                    first_msg.to_string()
+                                } else if !preview.is_empty() {
+                                    preview.to_string()
+                                } else {
+                                    "Codex Session".to_string()
+                                };
+                                let updated_at = item.get("updated_at").and_then(|v| v.as_i64());
+
+                                sessions.push(AgentSessionRecord {
+                                    id,
+                                    title,
+                                    agent_name: "Codex".to_string(),
+                                    agent_command: "codex".to_string(),
+                                    agent_id: "codex".to_string(),
+                                    created_at: updated_at,
+                                    project_path: proj_path,
+                                    project_name: proj_name,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Claude CLI (~/.claude/history.jsonl)
+    let claude_history = PathBuf::from(&home).join(".claude/history.jsonl");
+    if claude_history.exists() {
+        if let Ok(content) = std::fs::read_to_string(&claude_history) {
+            let mut claude_map: std::collections::HashMap<String, (String, i64, Option<String>)> = std::collections::HashMap::new();
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    let session_id = val.get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if session_id.is_empty() {
+                        continue;
+                    }
+                    let display = val.get("display").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    let timestamp = val.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let proj = val.get("project").or_else(|| val.get("cwd")).and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                    match claude_map.get(&session_id) {
+                        Some((curr_display, _, _)) => {
+                            if curr_display.starts_with('/') && !display.starts_with('/') && !display.is_empty() {
+                                claude_map.insert(session_id, (display, timestamp, proj));
+                            }
+                        }
+                        None => {
+                            claude_map.insert(session_id, (display, timestamp, proj));
+                        }
+                    }
+                }
+            }
+
+            for (session_id, (display, ts, proj)) in claude_map {
+                let title = if !display.is_empty() {
+                    display
+                } else {
+                    "Claude Session".to_string()
+                };
+                let (proj_path, proj_name) = if let Some(ref p) = proj {
+                    extract_project_from_dir(p)
+                } else {
+                    (None, None)
+                };
+                sessions.push(AgentSessionRecord {
+                    id: session_id,
+                    title,
+                    agent_name: "Claude".to_string(),
+                    agent_command: "claude".to_string(),
+                    agent_id: "claude".to_string(),
+                    created_at: Some(ts),
+                    project_path: proj_path,
+                    project_name: proj_name,
+                });
+            }
+        }
+    }
+
+    // Sort: sessions matching current workspace come first
+    if !ws_str.is_empty() {
+        sessions.sort_by(|a, b| {
+            let a_match = a.project_path.as_deref().map(|p| p == ws_str || p == ws_clean).unwrap_or(false);
+            let b_match = b.project_path.as_deref().map(|p| p == ws_str || p == ws_clean).unwrap_or(false);
+            b_match.cmp(&a_match)
+        });
+    }
+
+    Ok(sessions)
+}
+
+fn sql_escape_string(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
+fn run_sqlite_exec(db_path: &Path, query: &str) -> Option<i32> {
+    if !db_path.exists() {
+        return None;
+    }
+    let sqlite_cmd = if Path::new("/usr/bin/sqlite3").exists() {
+        "/usr/bin/sqlite3"
+    } else {
+        "sqlite3"
+    };
+    let output = Command::new(sqlite_cmd)
+        .args([db_path.to_str()?, query])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    stdout.parse::<i32>().ok()
+}
+
+#[tauri::command]
+fn system_update_project_agent_session_title(
+    _workspace_dir: String,
+    session_id: String,
+    new_title: String,
+) -> Result<bool, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Yang".to_string());
+    let clean_title = new_title.trim();
+    if clean_title.is_empty() {
+        return Err("Title cannot be empty".to_string());
+    }
+    let escaped_title = sql_escape_string(clean_title);
+    let escaped_id = sql_escape_string(&session_id);
+
+    // 1. Antigravity-CLI SQLite DB
+    let agy_db = PathBuf::from(&home).join(".gemini/antigravity-cli/conversation_summaries.db");
+    if agy_db.exists() {
+        let sql = format!(
+            "UPDATE conversation_summaries SET title = {} WHERE conversation_id = {}; SELECT changes();",
+            escaped_title, escaped_id
+        );
+        if let Some(changes) = run_sqlite_exec(&agy_db, &sql) {
+            if changes > 0 {
+                return Ok(true);
+            }
+        }
+    }
+
+    // 2. OpenCode SQLite DB
+    let oc_db = PathBuf::from(&home).join(".local/share/opencode/opencode.db");
+    if oc_db.exists() {
+        let sql = format!(
+            "UPDATE session_v2 SET title = {} WHERE id = {}; SELECT changes();",
+            escaped_title, escaped_id
+        );
+        if let Some(changes) = run_sqlite_exec(&oc_db, &sql) {
+            if changes > 0 {
+                return Ok(true);
+            }
+        }
+    }
+
+    // 3. Codex SQLite DB
+    let codex_dir = PathBuf::from(&home).join(".codex");
+    if codex_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&codex_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let fname = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                if fname.starts_with("state_") && fname.ends_with(".sqlite") {
+                    let sql = format!(
+                        "UPDATE threads SET title = {} WHERE id = {}; SELECT changes();",
+                        escaped_title, escaped_id
+                    );
+                    if let Some(changes) = run_sqlite_exec(&path, &sql) {
+                        if changes > 0 {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Claude CLI (~/.claude/history.jsonl)
+    let claude_history = PathBuf::from(&home).join(".claude/history.jsonl");
+    if claude_history.exists() {
+        if let Ok(content) = std::fs::read_to_string(&claude_history) {
+            let mut updated = false;
+            let mut new_lines = Vec::new();
+            for line in content.lines() {
+                if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(line) {
+                    if val.get("sessionId").and_then(|v| v.as_str()) == Some(&session_id) {
+                        val["display"] = serde_json::Value::String(clean_title.to_string());
+                        new_lines.push(serde_json::to_string(&val).unwrap_or_else(|_| line.to_string()));
+                        updated = true;
+                        continue;
+                    }
+                }
+                new_lines.push(line.to_string());
+            }
+            if updated {
+                let _ = std::fs::write(&claude_history, new_lines.join("\n") + "\n");
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+fn system_delete_project_agent_session(
+    _workspace_dir: String,
+    session_id: String,
+) -> Result<bool, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Yang".to_string());
+    let escaped_id = sql_escape_string(&session_id);
+
+    // 1. Antigravity-CLI SQLite DB
+    let agy_db = PathBuf::from(&home).join(".gemini/antigravity-cli/conversation_summaries.db");
+    if agy_db.exists() {
+        let sql = format!(
+            "DELETE FROM conversation_summaries WHERE conversation_id = {}; SELECT changes();",
+            escaped_id
+        );
+        let _ = run_sqlite_exec(&agy_db, &sql);
+    }
+
+    // 2. OpenCode SQLite DB
+    let oc_db = PathBuf::from(&home).join(".local/share/opencode/opencode.db");
+    if oc_db.exists() {
+        let sql = format!(
+            "DELETE FROM session_v2 WHERE id = {}; SELECT changes();",
+            escaped_id
+        );
+        let _ = run_sqlite_exec(&oc_db, &sql);
+    }
+
+    // 3. Codex SQLite DB
+    let codex_dir = PathBuf::from(&home).join(".codex");
+    if codex_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&codex_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let fname = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                if fname.starts_with("state_") && fname.ends_with(".sqlite") {
+                    let sql = format!(
+                        "DELETE FROM threads WHERE id = {}; SELECT changes();",
+                        escaped_id
+                    );
+                    let _ = run_sqlite_exec(&path, &sql);
+                }
+            }
+        }
+    }
+
+    // 4. Claude CLI (~/.claude/history.jsonl)
+    let claude_history = PathBuf::from(&home).join(".claude/history.jsonl");
+    if claude_history.exists() {
+        if let Ok(content) = std::fs::read_to_string(&claude_history) {
+            let mut new_lines = Vec::new();
+            for line in content.lines() {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                    if val.get("sessionId").and_then(|v| v.as_str()) == Some(&session_id) {
+                        continue;
+                    }
+                }
+                new_lines.push(line.to_string());
+            }
+            let _ = std::fs::write(&claude_history, new_lines.join("\n") + "\n");
+        }
+    }
+
+    Ok(true)
+}
+
 // ----------------- Native Terminal PTY Commands -----------------
 
 #[tauri::command]
@@ -830,15 +1360,25 @@ fn terminal_create(
     };
 
     if let Some(agent_cmd) = agent_cmd_opt {
-        let bin_string = if let Some(found_path) = resolve_candidate_path(agent_cmd) {
-            found_path.to_string_lossy().to_string()
+        let parts: Vec<&str> = agent_cmd.split_whitespace().collect();
+        let bin_string = if let Some(&first) = parts.first() {
+            if let Some(found_path) = resolve_candidate_path(first) {
+                let mut full = found_path.to_string_lossy().to_string();
+                if parts.len() > 1 {
+                    full.push(' ');
+                    full.push_str(&parts[1..].join(" "));
+                }
+                full
+            } else {
+                agent_cmd.to_string()
+            }
         } else {
             agent_cmd.to_string()
         };
 
         if cfg!(windows) {
             cmd.arg("-Command");
-            cmd.arg(format!("Set-Location '{}'; & '{}'", resolved_cwd.to_string_lossy(), bin_string));
+            cmd.arg(format!("Set-Location '{}'; & {}", resolved_cwd.to_string_lossy(), bin_string));
         } else {
             cmd.arg("-l");
             cmd.arg("-c");
@@ -1093,9 +1633,14 @@ pub fn run() {
             git_get_commit_files,
             git_get_file_diff,
             git_get_head_content,
+            git_commit,
+            git_push,
             system_detect_agents,
             system_scan_local_bin,
             system_register_custom_agent,
+            system_fetch_project_agent_sessions,
+            system_update_project_agent_session_title,
+            system_delete_project_agent_session,
             terminal_create,
             terminal_ready,
             terminal_write,

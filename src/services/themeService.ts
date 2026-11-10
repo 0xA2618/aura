@@ -144,12 +144,19 @@ export function applyThemeToDocument(theme: ThemeDefinition) {
     root.classList.add('dark');
   }
 
-  const cardBg = isLight ? '#ffffff' : '#252526';
-  const inputBg = isLight ? '#f1f5f9' : '#1e1e1e';
-  const dockHeaderBg = isLight ? '#f1f5f9' : '#252526';
-  const sidebarHeaderBg = isLight ? '#eef2f7' : '#1f1f20';
-  const sidebarToolbarBg = isLight ? '#f1f5f9' : '#252526';
-  const editorTabBg = isLight ? '#f1f5f9' : '#252526';
+  const cardBg = isLight
+    ? '#ffffff'
+    : (theme.id === 'gruvbox' ? '#282828' : '#252526');
+  const inputBg = isLight
+    ? '#f1f5f9'
+    : (theme.id === 'gruvbox' ? '#1d2021' : '#1e1e1e');
+  const elevatedBg = isLight
+    ? '#ffffff'
+    : (theme.id === 'gruvbox' ? '#32302f' : '#252526');
+  const dockHeaderBg = isLight ? '#f1f5f9' : (theme.id === 'gruvbox' ? '#282828' : '#252526');
+  const sidebarHeaderBg = isLight ? '#eef2f7' : (theme.id === 'gruvbox' ? '#282828' : '#1f1f20');
+  const sidebarToolbarBg = isLight ? '#f1f5f9' : (theme.id === 'gruvbox' ? '#282828' : '#252526');
+  const editorTabBg = isLight ? '#f1f5f9' : (theme.id === 'gruvbox' ? '#282828' : '#252526');
 
   const accentFg = theme.ui.accentFg || '#ffffff';
   const accentHover = theme.ui.accentHover || theme.ui.accent;
@@ -167,6 +174,7 @@ export function applyThemeToDocument(theme: ThemeDefinition) {
   root.style.setProperty('--aura-dock-fg', theme.ui.text);
   root.style.setProperty('--aura-dock-header-bg', dockHeaderBg);
   root.style.setProperty('--aura-card-bg', cardBg);
+  root.style.setProperty('--aura-bg-elevated', elevatedBg);
   root.style.setProperty('--aura-input-bg', inputBg);
   root.style.setProperty('--aura-border', theme.ui.border);
   root.style.setProperty('--aura-text', theme.ui.text);
