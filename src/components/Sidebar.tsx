@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileItem, GitCommit, PluginManifest } from '../types';
 import {
   fetchDirectory,
@@ -8,6 +8,7 @@ import {
   searchOpenVsxMarketplace,
   fetchCommitChangedFiles,
   fetchGitStatus,
+  getAcpConversations,
   DetectedAgent,
 } from '../services/fileService';
 import {
@@ -48,7 +49,7 @@ import {
 } from 'lucide-react';
 import { PLUGIN_LOGOS } from '../services/pluginLogos';
 import { FileIcon } from './FileIcon';
-import { ClaudeIcon, CodexIcon, AntigravityIcon, OpenCodeIcon, AgentDropdownMenu } from './AgentDropdownMenu';
+import { ClaudeIcon, CodexIcon, AntigravityIcon, AntigravityAcpIcon, OpenCodeIcon, AgentDropdownMenu } from './AgentDropdownMenu';
 import { computeVSCodeHistoryViewModels, HistoryItemViewModel, SWIMLANE_WIDTH, SWIMLANE_HEIGHT } from '../services/gitTopology';
 
 import { SupportedLang, translations } from '../services/i18n';
@@ -93,9 +94,9 @@ interface SidebarProps {
   onRenameSession?: (sessionId: string, newTitle: string) => void;
   onDeleteSession?: (sessionId: string) => void;
   onNewAgentSession?: () => void;
-  onSelectAgent?: (agent: DetectedAgent) => void;
+  onSelectAgent?: (agent: DetectedAgent, mode?: 'native' | 'acp') => void;
   onRunInstallCommand?: (installCmd: string, agentName: string) => void;
-  onOpenAddAgentModal?: () => void;
+  onOpenAddAgentModal?: (mode?: 'native' | 'acp') => void;
   onOpenSettings?: () => void;
   onSelectProject?: (projectDir: string) => void;
 }
@@ -136,7 +137,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const t = translations[lang];
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
-  const [folderChildren, setFolderChildren] = useState<Record<string, FileItem[]>>({});
+  const openFoldersRef = useRef(openFolders);
+  openFoldersRef.current = openFolders;
+
+  // Single source of truth for the directory tree (nested children embedded in the same state)
+  const [treeFiles, setTreeFiles] = useState<FileItem[]>([]);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -387,8 +392,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setEditingSessionId(null);
   };
 
-  const renderSessionAgentIcon = (name: string, command: string = '', agentId: string = '') => {
+  const renderSessionAgentIcon = (name: string, command: string = '', agentId: string = '', sessionId: string = '') => {
     const lower = (name + ' ' + command + ' ' + agentId).toLowerCase();
+    if (lower.includes('agy') && sessionId && getAcpConversations('agy').has(sessionId)) {
+      // Session created via agy acp — cyan ACP flame marker
+      return <AntigravityAcpIcon size={14} className="shrink-0" />;
+    }
+    if (lower.includes('opencode') && sessionId && getAcpConversations('opencode').has(sessionId)) {
+      return <OpenCodeIcon size={14} className="text-[#4ea8de] shrink-0" />;
+    }
     if (lower.includes('claude')) {
       return <ClaudeIcon size={14} className="text-[#D97757] shrink-0" />;
     }
@@ -483,12 +495,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [selectedCommitHash, workspaceDir]);
 
+  // ---------- Unified directory tree helpers (方案B) ----------
+  // Merge a fetched directory listing into the existing tree at `path` (keeps unrelated subtrees untouched)
+  const setChildrenInTree = useCallback((items: FileItem[], path: string, children: FileItem[]): FileItem[] => {
+    return items.map((it) => {
+      if (!it.isDirectory) return it;
+      if (it.path === path) return { ...it, children };
+      if (it.children) return { ...it, children: setChildrenInTree(it.children, path, children) };
+      return it;
+    });
+  }, []);
+
+  // Keep subtree children for directories that survive root refresh; fresh directories get no children yet
+  const carryChildren = useCallback((prevTree: FileItem[], newItems: FileItem[]): FileItem[] => {
+    return newItems.map((item) => {
+      if (!item.isDirectory) return item;
+      const prev = findNodeInTree(prevTree, item.path);
+      return prev?.children ? { ...item, children: prev.children } : item;
+    });
+  }, []);
+
+  const findNodeInTree = (items: FileItem[], path: string): FileItem | undefined => {
+    for (const it of items) {
+      if (it.path === path) return it;
+      if (it.children) {
+        const found = findNodeInTree(it.children, path);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+
+  // Refetch the root listing plus ALL currently-open folders in parallel, then merge into one consistent tree
+  const refreshTree = useCallback(async () => {
+    const [rootItems, openList] = await Promise.all([
+      fetchDirectory(workspaceDir),
+      Promise.resolve(
+        Object.entries(openFoldersRef.current)
+          .filter(([, open]) => open)
+          .map(([p]) => p)
+      ),
+    ]);
+    const openResults = await Promise.all(
+      openList.map(async (p) => [p, await fetchDirectory(p)] as const)
+    );
+    setTreeFiles((prev) => {
+      let merged = carryChildren(prev, rootItems);
+      for (const [p, children] of openResults) {
+        merged = setChildrenInTree(merged, p, children);
+      }
+      return merged;
+    });
+  }, [workspaceDir, carryChildren, setChildrenInTree]);
+
+  // Refetch a single folder (used when expanding one already-loaded directory)
+  const reloadFolder = useCallback(async (folderPath: string) => {
+    const children = await fetchDirectory(folderPath);
+    setTreeFiles((prev) => setChildrenInTree(prev, folderPath, children));
+  }, [setChildrenInTree]);
+
   useEffect(() => {
     setOpenFolders({});
-    setFolderChildren({});
+    setTreeFiles([]);
     setSelectedItem(null);
     setSelectedPaths(new Set());
   }, [workspaceDir]);
+
+  useEffect(() => {
+    // Reconcile root listing from prop into the unified tree; preserve children of still-open folders
+    setTreeFiles((prev) => carryChildren(prev, files || []));
+  }, [files, carryChildren]);
 
   useEffect(() => {
     const handleCloseSettingsMenu = () => {
@@ -536,10 +612,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const toggleFolder = async (folderPath: string) => {
     const nextOpen = !openFolders[folderPath];
     setOpenFolders((prev) => ({ ...prev, [folderPath]: nextOpen }));
-
-    if (nextOpen && !folderChildren[folderPath]) {
-      const children = await fetchDirectory(folderPath);
-      setFolderChildren((prev) => ({ ...prev, [folderPath]: children }));
+    if (nextOpen) {
+      // Always re-read from disk when expanding (方案B: single source of truth)
+      await reloadFolder(folderPath);
     }
   };
 
@@ -555,13 +630,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const traverse = (items: FileItem[]) => {
       for (const item of items) {
         result.push(item);
-        if (item.isDirectory && openFolders[item.path]) {
-          const children = folderChildren[item.path] || item.children;
-          if (children) traverse(children);
+        if (item.isDirectory && openFolders[item.path] && item.children) {
+          traverse(item.children);
         }
       }
     };
-    traverse(files);
+    traverse(treeFiles);
     return result;
   };
 
@@ -626,18 +700,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }
       }
     };
-    const handleFsChangedEvent = async () => {
-      const paths = Object.keys(openFolders).filter((p) => openFolders[p]);
-      if (paths.length > 0) {
-        const updates: Record<string, FileItem[]> = {};
-        await Promise.all(
-          paths.map(async (folderPath) => {
-            const children = await fetchDirectory(folderPath);
-            updates[folderPath] = children;
-          })
-        );
-        setFolderChildren((prev) => ({ ...prev, ...updates }));
-      }
+    const handleFsChangedEvent = () => {
+      // Single refresh path: root + all open folders, fetched in parallel and merged atomically
+      void refreshTree();
     };
     window.addEventListener('aura:focus-sidebar', handleFocusSidebarEvent);
     window.addEventListener('aura:fs-changed', handleFsChangedEvent);
@@ -645,7 +710,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       window.removeEventListener('aura:focus-sidebar', handleFocusSidebarEvent);
       window.removeEventListener('aura:fs-changed', handleFsChangedEvent);
     };
-  }, [files, openFolders, folderChildren]);
+  }, [openFolders, refreshTree]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -701,7 +766,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [contextMenu, selectedItem, inlineCreateParent, actionModal, inlineRenameItem, openFolders, folderChildren, files, workspaceDir]);
+  }, [contextMenu, selectedItem, inlineCreateParent, actionModal, inlineRenameItem, openFolders, treeFiles, workspaceDir]);
 
   useEffect(() => {
     if (inlineCreateParent && inlineInputRef.current) {
@@ -753,11 +818,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [actionModal]);
 
-  const refreshParentFolder = async (folderPath: string) => {
-    const updated = await fetchDirectory(folderPath);
-    setFolderChildren((prev) => ({ ...prev, [folderPath]: updated }));
-  };
-
   const handleConfirmInlineCreate = async () => {
     if (!inlineCreateParent) return;
     const trimmed = inlineInputVal.trim();
@@ -769,20 +829,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const isDir = trimmed.endsWith('/');
     const cleanName = isDir ? trimmed.slice(0, -1) : trimmed;
     const targetPath = `${inlineCreateParent.dirPath}/${cleanName}`;
-    const parentDir = inlineCreateParent.dirPath;
 
     if (isDir) {
-      setFolderChildren((prev) => ({
-        ...prev,
-        [targetPath]: [],
-      }));
       setOpenFolders((prev) => ({ ...prev, [targetPath]: true }));
     }
 
     await createFileSystemEntry(targetPath, isDir);
     setInlineCreateParent(null);
 
-    await refreshParentFolder(parentDir);
+    await refreshTree();
     onRefreshWorkspace();
 
     if (!isDir) {
@@ -801,7 +856,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const parent = inlineRenameItem.path.split('/').slice(0, -1).join('/');
       const newPath = `${parent}/${trimmed}`;
       await renameFileSystemEntry(inlineRenameItem.path, newPath);
-      await refreshParentFolder(parent);
+      await refreshTree();
       onRefreshWorkspace();
     }
     setInlineRenameItem(null);
@@ -853,23 +908,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     try {
       const ok = await renameFileSystemEntry(sourcePath, destinationPath);
       if (ok) {
-        setFolderChildren((prev) => {
+        // Open the target directory so the moved item is visible
+        setOpenFolders((prev) => ({ ...prev, [targetDirPath]: true }));
+
+        // Close any open folders that were moved away with the source
+        setOpenFolders((prev) => {
           const next = { ...prev };
-          delete next[sourceParent];
-          delete next[targetDirPath];
+          const sourceAbs = sourcePath;
+          for (const k of Object.keys(next)) {
+            if (k === sourceAbs || k.startsWith(`${sourceAbs}/`)) {
+              delete next[k];
+            }
+          }
           return next;
         });
 
-        if (sourceParent && sourceParent !== workspaceDir) {
-          const pChildren = await fetchDirectory(sourceParent);
-          setFolderChildren((prev) => ({ ...prev, [sourceParent]: pChildren }));
-        }
-        if (targetDirPath && targetDirPath !== workspaceDir) {
-          setOpenFolders((prev) => ({ ...prev, [targetDirPath]: true }));
-          const tChildren = await fetchDirectory(targetDirPath);
-          setFolderChildren((prev) => ({ ...prev, [targetDirPath]: tChildren }));
-        }
-
+        await refreshTree();
         onRefreshWorkspace();
       }
     } catch (err) {
@@ -886,17 +940,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       await deleteFileSystemEntry(deletedPath);
       setSelectedItem(null);
 
-      setFolderChildren((prev) => {
-        const next = { ...prev };
-        delete next[deletedPath];
-        for (const k of Object.keys(next)) {
-          if (k.startsWith(`${deletedPath}/`)) {
-            delete next[k];
-          }
-        }
-        return next;
-      });
-
       setOpenFolders((prev) => {
         const next = { ...prev };
         delete next[deletedPath];
@@ -908,7 +951,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return next;
       });
 
-      await refreshParentFolder(parent);
+      await refreshTree();
       onRefreshWorkspace();
     } else if (actionModal.type === 'move' && actionModal.sourcePath && actionModal.destinationPath) {
       if (doNotAskAgainChecked) {
@@ -930,7 +973,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const changedCount = gitStatusData.totalChanged > 0
     ? gitStatusData.totalChanged
-    : files.filter((f) => f.gitStatus && f.gitStatus !== 'IGNORED').length;
+    : treeFiles.filter((f) => f.gitStatus && f.gitStatus !== 'IGNORED').length;
 
   const renderFileTree = (items: FileItem[], level = 0, parentDirPath = workspaceDir) => {
     return (
@@ -1085,6 +1128,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <input
                     ref={inlineRenameInputRef}
                     type="text"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="off"
                     value={inlineRenameVal}
                     onChange={(e) => setInlineRenameVal(e.target.value)}
                     onBlur={handleConfirmInlineRename}
@@ -1175,6 +1222,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <input
                         ref={inlineInputRef}
                         type="text"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        autoComplete="off"
                         value={inlineInputVal}
                         onChange={(e) => setInlineInputVal(e.target.value)}
                         onBlur={handleConfirmInlineCreate}
@@ -1192,9 +1243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   )}
 
-                  {folderChildren[item.path]
-                    ? renderFileTree(folderChildren[item.path], level + 1, item.path)
-                    : item.children
+                  {item.children
                     ? renderFileTree(item.children, level + 1, item.path)
                     : null}
                 </div>
@@ -1212,6 +1261,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <input
               ref={inlineInputRef}
               type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="off"
               value={inlineInputVal}
               onChange={(e) => setInlineInputVal(e.target.value)}
               onBlur={handleConfirmInlineCreate}
@@ -1308,17 +1361,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <AgentDropdownMenu
                   isOpen={isAgentMenuOpen}
                   onClose={() => setIsAgentMenuOpen(false)}
-                  onSelectAgent={(agent) => {
+                  onSelectAgent={(agent, mode) => {
                     setIsAgentMenuOpen(false);
-                    onSelectAgent?.(agent);
+                    onSelectAgent?.(agent, mode);
                   }}
                   onRunInstall={(cmd, name) => {
                     setIsAgentMenuOpen(false);
                     onRunInstallCommand?.(cmd, name);
                   }}
-                  onOpenAddModal={() => {
+                  onOpenAddModal={(mode) => {
                     setIsAgentMenuOpen(false);
-                    onOpenAddAgentModal?.();
+                    onOpenAddAgentModal?.(mode);
                   }}
                   onOpenSettings={() => {
                     setIsAgentMenuOpen(false);
@@ -1433,11 +1486,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               onClick={(e) => e.stopPropagation()}
                             >
                               <div className="flex-shrink-0">
-                                {renderSessionAgentIcon(session.agentName, session.agentCommand, session.agentId)}
+                                {renderSessionAgentIcon(session.agentName, session.agentCommand, session.agentId, session.id)}
                               </div>
                               <input
                                 type="text"
                                 autoFocus
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                autoComplete="off"
                                 value={editingSessionTitle}
                                 onChange={(e) => setEditingSessionTitle(e.target.value)}
                                 onKeyDown={(e) => {
@@ -1478,7 +1535,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             >
                               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                 <div className="flex-shrink-0">
-                                  {renderSessionAgentIcon(session.agentName, session.agentCommand, session.agentId)}
+                                  {renderSessionAgentIcon(session.agentName, session.agentCommand, session.agentId, session.id)}
                                 </div>
                                 <span
                                   style={{ fontSize: `${fontSize}px` }}
@@ -1654,7 +1711,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }}
             className="min-h-full pb-8"
           >
-            {renderFileTree(files)}
+            {renderFileTree(treeFiles)}
           </div>
         )}
 
@@ -1729,7 +1786,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {(() => {
                   const changedFiles = gitStatusData.files.length > 0
                     ? gitStatusData.files
-                    : files.filter(f => f.gitStatus && f.gitStatus !== 'IGNORED');
+                    : treeFiles.filter(f => f.gitStatus && f.gitStatus !== 'IGNORED');
                   if (changedFiles.length === 0) {
                     return (
                       <div className="py-12 text-center text-xs text-[var(--aura-text-muted)] flex flex-col items-center gap-2">
@@ -2492,6 +2549,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="py-0.5">
+            <div
+              onClick={() => {
+                const s = sessionContextMenu.session;
+                setSessionContextMenu(null);
+                navigator.clipboard?.writeText(s.id).catch(() => {});
+              }}
+              className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--aura-accent,#007acc)]/20 hover:text-[var(--aura-accent,#007acc)] cursor-pointer transition-colors"
+            >
+              <span>Copy</span>
+              <span className="text-[10px] text-[var(--aura-text-muted)] font-mono">Session ID</span>
+            </div>
             <div
               onClick={() => {
                 const s = sessionContextMenu.session;
