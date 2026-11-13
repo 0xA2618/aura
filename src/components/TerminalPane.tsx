@@ -128,6 +128,27 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     term.parser.registerCsiHandler({ final: 'c' }, () => true);
     term.parser.registerCsiHandler({ prefix: '>', final: 'c' }, () => true);
 
+    // opencode TUI 把 Option+Enter（xterm.js 发送 \x1b\r，即 META+Enter）解释为“换行”；
+    // xterm.js 默认把 Shift+Enter 当成普通 Enter（直接发 \r → 发送消息）。
+    // 这里迁移为 Shift+Enter = 换行：捕获后直写 \x1b\r，并阻止 xterm 再发 \r。
+    if (typeof mode === 'string' && mode.trim().startsWith('opencode')) {
+      term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+        if (
+          event.type === 'keydown' &&
+          event.key === 'Enter' &&
+          event.shiftKey &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey
+        ) {
+          event.preventDefault();
+          writeTerminalPTY(id, '\x1b\r');
+          return false; // 阻止 xterm.js 的默认 Enter 处理
+        }
+        return true;
+      });
+    }
+
     term.onBell(() => {});
     term.open(terminalRef.current);
     safeFit();
@@ -136,6 +157,24 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     fitAddonRef.current = fitAddon;
 
     const termEl = terminalRef.current;
+
+    // ---- xterm.js 5.5/6.0.0 bug workaround (#6144, fixed by PR #6200 in 7.0.0) ----
+    // macOS 中文输入法直接上屏的全角符号（？！，。（）等）走 beforeinput → input → keydown
+    // （input 事件早于 keydown 到达），会被 xterm 内部的 `_keyDownSeen` 门吞掉，表现为“第一个字符按不进去”。
+    // 在祖先容器 capture 阶段提前清掉该内部标志，使组字文本顺利进入 PTY；
+    // 组字输入的汉字走 composition 路径不受影响。xterm 7.0.0 含 PR #6200 后可删除此段。
+    const handleImeBeforeInput = (ev: Event) => {
+      const inputEvent = ev as InputEvent;
+      if (inputEvent.inputType !== 'insertText' || !inputEvent.data) return;
+      const core = (term as unknown as { _core?: { _keyDownSeen?: boolean } })._core;
+      if (core && '_keyDownSeen' in core) {
+        core._keyDownSeen = false;
+      }
+    };
+    if (termEl) {
+      termEl.addEventListener('beforeinput', handleImeBeforeInput, true);
+    }
+
     const handleNativeDragOver = (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -153,9 +192,9 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
         e.dataTransfer?.getData('text/plain');
 
       if (droppedPath) {
-        writeTerminalPTY(id, `${droppedPath} `);
+        writeTerminalPTY(id, `"${droppedPath}" `);
         if (typeof window !== 'undefined' && (window as any).electronAPI?.terminalWrite) {
-          (window as any).electronAPI.terminalWrite(id, `${droppedPath} `);
+          (window as any).electronAPI.terminalWrite(id, `"${droppedPath}" `);
         }
         term.focus();
       }
@@ -239,6 +278,7 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
           termEl.removeEventListener('dragenter', handleNativeDragOver, true);
           termEl.removeEventListener('dragover', handleNativeDragOver, true);
           termEl.removeEventListener('drop', handleNativeDrop, true);
+          termEl.removeEventListener('beforeinput', handleImeBeforeInput, true);
         }
         if (resizeObserver) {
           resizeObserver.disconnect();
@@ -284,6 +324,9 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
         window.removeEventListener('resize', handleResize);
         removeDataListener();
         api.terminalKill(id);
+        if (termEl) {
+          termEl.removeEventListener('beforeinput', handleImeBeforeInput, true);
+        }
         term.dispose();
       };
     } else {
@@ -320,6 +363,9 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       window.addEventListener('resize', handleResize);
       return () => {
         window.removeEventListener('resize', handleResize);
+        if (termEl) {
+          termEl.removeEventListener('beforeinput', handleImeBeforeInput, true);
+        }
         term.dispose();
       };
     }
@@ -442,9 +488,9 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
           e.stopPropagation();
           const droppedPath = e.dataTransfer.getData('application/aura-path') || e.dataTransfer.getData('text/plain');
           if (droppedPath) {
-            writeTerminalPTY(id, `${droppedPath} `);
+            writeTerminalPTY(id, `"${droppedPath}" `);
             if (typeof window !== 'undefined' && (window as any).electronAPI?.terminalWrite) {
-              (window as any).electronAPI.terminalWrite(id, `${droppedPath} `);
+              (window as any).electronAPI.terminalWrite(id, `"${droppedPath}" `);
             }
             if (xtermInstance.current) {
               xtermInstance.current.focus();
