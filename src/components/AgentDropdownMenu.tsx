@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Download, Terminal, Bot } from 'lucide-react';
-import { DetectedAgent, detectSystemAgents } from '../services/fileService';
+import { Plus, Terminal, Bot } from 'lucide-react';
+import { DetectedAgent, detectSystemAgents, fetchAcpAgents } from '../services/fileService';
 
 // Official brand icons for AI agents
 export const ClaudeIcon: React.FC<{ size?: number; className?: string }> = ({ size = 16, className = '' }) => (
@@ -32,6 +32,44 @@ export const AntigravityIcon: React.FC<{ size?: number; className?: string }> = 
   </svg>
 );
 
+// Antigravity ACP (Agent Client Protocol) — same flame silhouette, cyan→violet gradient, with a small "A" ACP badge in the corner
+export const AntigravityAcpIcon: React.FC<{ size?: number; className?: string }> = ({ size = 16, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
+    <defs>
+      <linearGradient id="antigravity-acp-gradient" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#00E5FF" />
+        <stop offset="35%" stopColor="#38BDF8" />
+        <stop offset="70%" stopColor="#818CF8" />
+        <stop offset="100%" stopColor="#C084FC" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"
+      fill="url(#antigravity-acp-gradient)"
+    />
+    <circle cx="18.2" cy="18.2" r="4.6" fill="#0e7490" stroke="#0b0b0b" strokeWidth="0.9" />
+    <text x="18.2" y="20.4" textAnchor="middle" fontSize="5.2" fontWeight="700" fill="#a5f3fc" fontFamily="ui-monospace, monospace">A</text>
+  </svg>
+);
+
+// Google Gemini — 4-point sparkle (Google's Gemini mark silhouette) in blue→violet gradient
+export const GeminiIcon: React.FC<{ size?: number; className?: string }> = ({ size = 16, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
+    <defs>
+      <linearGradient id="gemini-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#4285F4" />
+        <stop offset="100%" stopColor="#9B72CF" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M12 2c.6 4.5 3.5 7.4 10 10-6.5 2.6-9.4 5.5-10 10-.6-4.5-3.5-7.4-10-10 6.5-2.6 9.4-5.5 10-10z"
+      fill="url(#gemini-gradient)"
+    />
+  </svg>
+);
+
+// Antigravity ACP (Agent Client Protocol) — uses the same flame as agy cli; icon disambiguation happens via title/status dot
+
 export const OpenCodeIcon: React.FC<{ size?: number; className?: string }> = ({ size = 16, className = '' }) => (
   <svg width={size} height={size} viewBox="-30 0 300 300" fill="currentColor" className={className}>
     <path d="M180 240H60V120H180V240Z" />
@@ -39,14 +77,14 @@ export const OpenCodeIcon: React.FC<{ size?: number; className?: string }> = ({ 
   </svg>
 );
 
-export { ClaudeIcon as ClaudeLogo, CodexIcon as CodexLogo, AntigravityIcon as AntigravityLogo, OpenCodeIcon as OpenCodeLogo };
+export { ClaudeIcon as ClaudeLogo, CodexIcon as CodexLogo, AntigravityIcon as AntigravityLogo, AntigravityAcpIcon as AntigravityAcpLogo, OpenCodeIcon as OpenCodeLogo, GeminiIcon as GeminiLogo };
 
 interface AgentDropdownMenuProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectAgent: (agent: DetectedAgent) => void;
+  onSelectAgent: (agent: DetectedAgent, mode?: 'native' | 'acp') => void;
   onRunInstall: (installCmd: string, agentName: string) => void;
-  onOpenAddModal?: () => void;
+  onOpenAddModal?: (mode: 'native' | 'acp') => void;
   onOpenSettings?: () => void;
 }
 
@@ -59,6 +97,7 @@ const DEFAULT_PRESET_AGENTS: DetectedAgent[] = [
     category: 'coding',
     is_installed: false,
     install_command: 'npm install -g @anthropic-ai/claude-code',
+    acp: true,
   },
   {
     id: 'codex',
@@ -68,16 +107,29 @@ const DEFAULT_PRESET_AGENTS: DetectedAgent[] = [
     category: 'terminal',
     is_installed: false,
     install_command: 'npm install -g @openai/codex',
+    acp: true,
   },
   {
     id: 'agy',
-    name: 'Google Antigravity',
+    name: 'agy cli',
     command: 'agy',
-    description: 'Google Antigravity CLI advanced agentic coding',
+    description: 'Google Antigravity CLI — native binary (terminal mode)',
     category: 'research',
     is_installed: false,
     install_command: 'npm install -g @google/antigravity-cli',
+    acp: false,
   },
+  {
+    id: 'agy-acp',
+    name: 'agy acp',
+    command: 'agy',
+    description: 'Antigravity ACP — Agent Client Protocol (JSON-RPC over stdio)',
+    category: 'coding',
+    is_installed: false,
+    install_command: 'npm install -g @google/antigravity-cli',
+    acp: true,
+  },
+
   {
     id: 'opencode',
     name: 'OpenCode V2',
@@ -86,6 +138,7 @@ const DEFAULT_PRESET_AGENTS: DetectedAgent[] = [
     category: 'coding',
     is_installed: true,
     install_command: 'npm install -g @opencode/cli || brew install opencode',
+    acp: true,
   },
 ];
 
@@ -98,6 +151,7 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
   onOpenSettings,
 }) => {
   const [agents, setAgents] = useState<DetectedAgent[]>(DEFAULT_PRESET_AGENTS);
+  const [agentTab, setAgentTab] = useState<'native' | 'acp'>('native');
   const menuRef = useRef<HTMLDivElement>(null);
 
   const fetchAgents = async () => {
@@ -114,16 +168,43 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
         console.error(e);
       }
 
-      // Merge presets with detected data to guarantee all supported agents are displayed
+      // Merge: builtin presets -> auto-detected -> user config (~/.config/aura/aura.json) -> local custom
       const map = new Map<string, DetectedAgent>();
       DEFAULT_PRESET_AGENTS.forEach((preset) => map.set(preset.id, { ...preset }));
       data.forEach((agent) => map.set(agent.id, agent));
+
+      // User config from ~/.config/aura/aura.json (agents.acp) overrides same-id entries;
+      // config-only ACP agents are appended as new entries
+      try {
+        const configAcp = await fetchAcpAgents();
+        for (const cfg of configAcp) {
+          if (cfg.enabled === false) {
+            map.delete(cfg.id);
+            continue;
+          }
+          const existing = map.get(cfg.id);
+          map.set(cfg.id, {
+            id: cfg.id,
+            name: cfg.name,
+            command: cfg.command,
+            description: existing?.description || 'ACP agent from ~/.config/aura/aura.json',
+            category: 'acp',
+            is_installed: existing?.is_installed ?? true,
+            install_command: existing?.install_command || '',
+            path: existing?.path ?? null,
+            acp: true,
+          });
+        }
+      } catch (e) {
+        console.error('[AgentDropdownMenu config merge error]', e);
+      }
+
       customAgents.forEach((ca) => map.set(ca.id, ca));
 
       const combined = Array.from(map.values());
 
-      // Ensure ordering: Claude Agent, Codex, Google Antigravity, OpenCode V2, then custom
-      const order = ['claude', 'codex', 'agy', 'opencode'];
+      // Ensure ordering: Claude Agent, Codex, agy cli, agy acp, OpenCode V2, then local-bin detected, then custom
+      const order = ['claude', 'codex', 'agy', 'agy-acp', 'opencode'];
       const sorted = combined.sort((a, b) => {
         const idxA = order.indexOf(a.id);
         const idxB = order.indexOf(b.id);
@@ -170,39 +251,62 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
 
   if (!isOpen) return null;
 
-  const renderIcon = (id: string) => {
-    switch (id) {
+  // Only show installed agents — uninstalled ones are hidden
+  const installedAgents = agents.filter((a) => a.is_installed);
+  // Native tab: every installed agent except the agy-acp entry (it lives in ACP tab)
+  const nativeAgents = installedAgents.filter((a) => a.id !== 'agy-acp');
+  // Agent ACP tab for now: agy only
+  const acpAgents = installedAgents.filter((a) => a.id === 'agy-acp');
+  const visibleAgents = agentTab === 'native' ? nativeAgents : acpAgents;
+
+  const renderIcon = (agent: DetectedAgent) => {
+    // Brand icons first (applies to both built-ins and config entries sharing the id)
+    switch (agent.id) {
       case 'claude':
         return <ClaudeIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
       case 'codex':
         return <CodexIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
+      case 'gemini':
+        return <GeminiIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
       case 'agy':
         return <AntigravityIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
+      case 'agy-acp':
+        return <AntigravityAcpIcon size={17} className="text-[var(--aura-text)] shrink-0" />;
       case 'opencode':
         return <OpenCodeIcon size={16} className="text-[var(--aura-text)] shrink-0" />;
-      default:
+      case 'copilot':
         return <Terminal size={16} className="text-[var(--aura-text)] shrink-0" />;
+      default:
+        // Config-added ACP agents with no brand icon — generic Bot, tinted ACP blue
+        return agent.acp
+          ? <Bot size={16} className="text-[#4ea8de] shrink-0" />
+          : <Terminal size={16} className="text-[var(--aura-text)] shrink-0" />;
     }
   };
 
   const getDisplayName = (agent: DetectedAgent) => {
     switch (agent.id) {
       case 'claude':
-        return 'Claude Agent';
+        return 'claude';
       case 'codex':
-        return 'Codex';
-      case 'agy':
-        return 'Google Antigravity';
+        return 'codex';
+      case 'gemini':
+        return 'gemini';
       case 'opencode':
-        return 'OpenCode V2';
+        return 'opencode';
+      case 'agy':
+        return 'agy cli';
+      case 'agy-acp':
+        return 'agy';
       default:
-        return agent.name;
+        // Config-added ACP agents: show base name (strip trailing " acp")
+        return agent.name.replace(/\s+acp\s*$/i, '').trim() || agent.command;
     }
   };
 
   const handleAgentClick = (agent: DetectedAgent) => {
     if (agent.is_installed) {
-      onSelectAgent(agent);
+      onSelectAgent(agent, agentTab);
     } else {
       onRunInstall(agent.install_command, getDisplayName(agent));
     }
@@ -220,11 +324,45 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
       }}
       className="absolute right-0 top-full mt-1.5 w-[260px] rounded-xl border z-[100] overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 font-sans p-1.5"
     >
+      {/* Tabs: Native Agent (default) / Agent ACP */}
+      <div className="flex items-center gap-1 px-1 pb-1.5 mb-1 border-b border-[var(--aura-border,rgba(125,125,125,0.15))] select-none">
+        <button
+          onClick={() => setAgentTab('native')}
+          title="原生 Agent — 直接在终端运行原生二进制"
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+            agentTab === 'native'
+              ? 'text-[var(--aura-text)] bg-black/10 dark:bg-white/10'
+              : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)]'
+          }`}
+        >
+          <Terminal size={11} />
+          <span>原生 Agent</span>
+          <span className="text-[9px] opacity-60 font-normal">{nativeAgents.length}</span>
+        </button>
+        <button
+          onClick={() => setAgentTab('acp')}
+          title="Agent ACP — Agent Client Protocol (JSON-RPC over stdio)"
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+            agentTab === 'acp'
+              ? 'text-[#4ea8de] bg-[#007acc]/15'
+              : 'text-[var(--aura-text-muted)] hover:text-[#4ea8de]'
+          }`}
+        >
+          <Bot size={11} />
+          <span>Agent ACP</span>
+          <span className="text-[9px] opacity-60 font-normal">{acpAgents.length}</span>
+        </button>
+      </div>
+
       {/* Agents List */}
-      <div className="space-y-0.5">
-        {agents.map((agent) => {
+      <div className="space-y-0.5 min-h-[44px]">
+        {visibleAgents.length === 0 && (
+          <div className="px-3 py-4 text-center text-[11px] text-[var(--aura-text-muted)]">
+            {agentTab === 'native' ? '未检测到已安装的原生 Agent' : '未检测到已安装的 ACP Agent'}
+          </div>
+        )}
+        {visibleAgents.map((agent) => {
           const displayName = getDisplayName(agent);
-          const isOpencode = agent.id === 'opencode';
 
           return (
             <div
@@ -234,33 +372,13 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="opacity-90 group-hover:opacity-100 transition-opacity">
-                  {renderIcon(agent.id)}
+                  {renderIcon(agent)}
                 </div>
                 <span className="truncate font-normal tracking-tight">
                   {displayName}
                 </span>
-              </div>
-
-              {/* Right side: Shortcut for default agent or Install badge */}
-              <div className="shrink-0 flex items-center">
-                {agent.is_installed ? (
-                  isOpencode ? (
-                    <span className="text-[12px] text-[var(--aura-text-muted)] font-sans font-normal tracking-wide">
-                      ⌘ N
-                    </span>
-                  ) : null
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAgentClick(agent);
-                    }}
-                    title={`Click to install ${displayName} in Container 3`}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[var(--aura-accent,#007acc)] text-white hover:opacity-90 active:scale-95 transition-all shadow-xs cursor-pointer"
-                  >
-                    <Download size={10} strokeWidth={2.5} />
-                    <span>Install</span>
-                  </button>
+                {agentTab === 'acp' && agent.acp && (
+                  <span className="shrink-0 text-[9px] font-mono text-[#4ea8de] bg-[#007acc]/15 rounded px-1 py-0.5">ACP</span>
                 )}
               </div>
             </div>
@@ -271,22 +389,41 @@ export const AgentDropdownMenu: React.FC<AgentDropdownMenuProps> = ({
       {/* Divider */}
       <div className="my-1 border-t border-[var(--aura-border,rgba(125,125,125,0.15))]" />
 
-      {/* Add More Agents */}
+      {/* Add agents — mode depends on the active tab */}
       <div>
-        <button
-          onClick={() => {
-            onClose();
-            if (onOpenAddModal) {
-              onOpenAddModal();
-            } else if (onOpenSettings) {
-              onOpenSettings();
-            }
-          }}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/[0.08] active:bg-black/10 dark:active:bg-white/[0.12] transition-colors text-left cursor-pointer"
-        >
-          <Plus size={16} className="text-[var(--aura-text-muted)]" />
-          <span className="font-normal tracking-tight">Add More Agents</span>
-        </button>
+        {agentTab === 'native' ? (
+          <button
+            onClick={() => {
+              onClose();
+              if (onOpenAddModal) {
+                onOpenAddModal('native');
+              } else if (onOpenSettings) {
+                onOpenSettings();
+              }
+            }}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/[0.08] active:bg-black/10 dark:active:bg-white/[0.12] transition-colors text-left cursor-pointer"
+          >
+            <Plus size={16} className="text-[var(--aura-text-muted)]" />
+            <span className="font-normal tracking-tight">Add More Agents</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              onClose();
+              if (onOpenAddModal) {
+                onOpenAddModal('acp');
+              } else if (onOpenSettings) {
+                onOpenSettings();
+              }
+            }}
+            title="Add a new Agent ACP — launched via JSON-RPC over stdio"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13.5px] text-[#4ea8de] hover:bg-[#007acc]/10 active:bg-[#007acc]/15 transition-colors text-left cursor-pointer"
+          >
+            <Bot size={16} className="text-[#4ea8de] shrink-0" />
+            <span className="font-normal tracking-tight">Add Agent ACP</span>
+            <span className="ml-auto text-[9px] font-mono rounded px-1.5 py-0.5 bg-[#007acc]/20 text-[#4ea8de]">ACP</span>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { Sidebar, AgentSessionItem } from './components/Sidebar';
 import { CodeEditor } from './components/CodeEditor';
 import { TerminalPane } from './components/TerminalPane';
 import { OpenCodeChat } from './components/OpenCodeChat';
+import { AcpSession } from './components/AcpSession';
 import { QuickPicker } from './components/QuickPicker';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
@@ -17,6 +18,7 @@ import {
   PaneSplitDirection,
   GitCommit,
   PluginManifest,
+  AcpConnStatus,
 } from './types';
 import {
   fetchDirectory,
@@ -39,9 +41,16 @@ import {
   fetchProjectAgentSessions,
   updateProjectAgentSessionTitle,
   deleteProjectAgentSession,
+  isAcpAgent,
+  acpStop,
+  fetchAcpAgents,
+  trackAcpConversation,
+  getAcpConversationAgent,
+  untrackAcpConversation,
+  memoryDeleteMemo,
 } from './services/fileService';
 import { Terminal, Bot, Plus, X, ChevronUp, ChevronDown, Check, Move, PanelLeftOpen, PanelLeftClose, Columns } from 'lucide-react';
-import { OpenCodeLogo, AntigravityLogo, CodexLogo, ClaudeLogo } from './components/AgentDropdownMenu';
+import { OpenCodeLogo, AntigravityLogo, AntigravityAcpLogo, CodexLogo, ClaudeLogo, GeminiLogo } from './components/AgentDropdownMenu';
 
 import { SupportedLang, getInitialLanguage, translations } from './services/i18n';
 import { getThemeById, applyThemeToDocument } from './services/themeService';
@@ -161,6 +170,8 @@ interface BottomDockProps {
   editingDockTabId: string | null;
   editingDockTabTitle: string;
   dockRenameInputRef: any;
+  acpStatus: Record<string, AcpConnStatus>;
+  onAcpStatusChange: (id: string, status: AcpConnStatus) => void;
   onPaneFocus: (paneId: string) => void;
   onMouseDownBottom: (e: React.MouseEvent) => void;
   onSelectDockTab: (id: string) => void;
@@ -191,6 +202,8 @@ const BottomDockArea = React.memo<BottomDockProps>(({
   editingDockTabId,
   editingDockTabTitle,
   dockRenameInputRef,
+  acpStatus,
+  onAcpStatusChange,
   onPaneFocus,
   onMouseDownBottom,
   onSelectDockTab,
@@ -263,8 +276,22 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                       : 'hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-[#2e2e2e]'
                   }`}
                 >
-                  {bt.type === 'terminal' ? (
+                  {bt.agentCommand === 'acp:agy-acp' ? (
+                    <AntigravityAcpLogo size={14} />
+                  ) : bt.type === 'terminal' ? (
                     <Terminal size={13} className="text-emerald-400" />
+                  ) : bt.agentCommand?.startsWith('acp:') ? (
+                    bt.agentCommand === 'acp:opencode' ? (
+                      <OpenCodeLogo size={14} />
+                    ) : bt.agentCommand === 'acp:claude' ? (
+                      <ClaudeLogo size={14} />
+                    ) : bt.agentCommand === 'acp:codex' ? (
+                      <CodexLogo size={14} />
+                    ) : bt.agentCommand === 'acp:gemini' ? (
+                      <GeminiLogo size={14} />
+                    ) : (
+                      <Bot size={13} className="text-[#4ea8de] shrink-0" />
+                    )
                   ) : bt.agentCommand?.includes('agy') || bt.agentCommand?.includes('antigravity') ? (
                     <AntigravityLogo size={14} />
                   ) : bt.agentCommand?.includes('codex') ? (
@@ -280,6 +307,10 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                     <input
                       ref={dockRenameInputRef}
                       type="text"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="off"
                       value={editingDockTabTitle}
                       onChange={(e) => onChangeRenameTitle(e.target.value)}
                       onBlur={onConfirmRename}
@@ -295,7 +326,31 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                       className="border rounded px-1.5 py-0.5 text-xs outline-none font-mono shadow-xs"
                     />
                   ) : (
-                    <span className="font-mono text-[11.5px]">{bt.title}</span>
+                    <span className="font-mono text-[11.5px] max-w-[180px] truncate block" title={bt.title}>
+                      {bt.title}
+                    </span>
+                  )}
+                  {bt.agentCommand?.startsWith('acp:') && (
+                    <span
+                      title={
+                        acpStatus[bt.id] === 'connected'
+                          ? 'ACP session connected'
+                          : acpStatus[bt.id] === 'connecting'
+                          ? 'ACP connecting…'
+                          : acpStatus[bt.id] === 'error'
+                          ? 'ACP disconnected'
+                          : 'ACP connection'
+                      }
+                      className={`w-1.5 h-1.5 rounded-full transition-colors duration-700 ml-0.5 shrink-0 ${
+                        acpStatus[bt.id] === 'connected'
+                          ? 'bg-emerald-400'
+                          : acpStatus[bt.id] === 'connecting'
+                          ? 'bg-yellow-400 animate-pulse'
+                          : acpStatus[bt.id] === 'error'
+                          ? 'bg-red-400'
+                          : 'bg-zinc-600'
+                      }`}
+                    />
                   )}
                   <button
                     onClick={(e) => onCloseDockTab(bt.id, e)}
@@ -345,10 +400,10 @@ const BottomDockArea = React.memo<BottomDockProps>(({
             if (droppedPath) {
               const targetTerminalId = focusedPaneId || activeBottomTab?.id;
               if (targetTerminalId) {
-                writeTerminalPTY(targetTerminalId, `${droppedPath} `);
+                writeTerminalPTY(targetTerminalId, `"${droppedPath}" `);
               }
               if ((window as any).electronAPI) {
-                (window as any).electronAPI.terminalWrite(activeBottomTab.id, `${droppedPath} `);
+                (window as any).electronAPI.terminalWrite(activeBottomTab.id, `"${droppedPath}" `);
               }
             }
           }}
@@ -381,15 +436,27 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                     }}
                     className="overflow-hidden border border-[var(--aura-border,#2d2d2d)] transition-[left,top,width,height] duration-75"
                   >
-                    <TerminalPane
-                      id={leaf.id}
-                      cwd={bt.cwd || workspaceDir || undefined}
-                      mode={bt.type === 'terminal' ? 'shell' : (bt.agentCommand || bt.type)}
-                      themeId={themeId}
-                      fontSize={fontSize}
-                      fontFamily={fontFamily}
-                      isVisible={isVisible}
-                    />
+                    {bt.agentCommand?.startsWith('acp:') ? (
+                      <AcpSession
+                        sessionId={leaf.id}
+                        agentId={bt.agentCommand.slice(4)}
+                        agentName={bt.title.replace(/ \(ACP\)$/, '')}
+                        cwd={bt.cwd || workspaceDir || ''}
+                        onSessionClose={(id) => onCloseDockTab(id, { stopPropagation: () => {} } as any)}
+                        onStatusChange={onAcpStatusChange}
+                        resumeAgentSessionId={bt.resumeAgentSessionId}
+                      />
+                    ) : (
+                      <TerminalPane
+                        id={leaf.id}
+                        cwd={bt.cwd || workspaceDir || undefined}
+                        mode={bt.type === 'terminal' ? 'shell' : (bt.agentCommand || bt.type)}
+                        themeId={themeId}
+                        fontSize={fontSize}
+                        fontFamily={fontFamily}
+                        isVisible={isVisible}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -412,7 +479,8 @@ const BottomDockArea = React.memo<BottomDockProps>(({
     prev.isResizing === next.isResizing &&
     prev.editingDockTabId === next.editingDockTabId &&
     prev.editingDockTabTitle === next.editingDockTabTitle &&
-    prev.bottomTabs === next.bottomTabs
+    prev.bottomTabs === next.bottomTabs &&
+    prev.acpStatus === next.acpStatus
   );
 });
 
@@ -486,6 +554,11 @@ export function App() {
     return localStorage.getItem('aura:terminalFontFamily') || 'JetBrains Mono';
   });
 
+  const [acpStatusMap, setAcpStatusMap] = useState<Record<string, AcpConnStatus>>({});
+  const handleAcpStatusChange = useCallback((id: string, status: AcpConnStatus) => {
+    setAcpStatusMap((prev) => (prev[id] === status ? prev : { ...prev, [id]: status }));
+  }, []);
+
   // Top-Right Editor Tabs
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const tabsRef = useRef<OpenTab[]>(tabs);
@@ -539,6 +612,7 @@ export function App() {
   const [isQuickPickerOpen, setIsQuickPickerOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
+  const [addAgentMode, setAddAgentMode] = useState<'native' | 'acp'>('native');
   const [isGitModalOpen, setIsGitModalOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string>('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
@@ -587,6 +661,25 @@ export function App() {
   }, [themeId]);
 
   useEffect(() => {
+    // Prime the config-driven ACP registry (~/.config/aura/aura.json)
+    fetchAcpAgents().catch(() => {});
+
+    // One-time backfill: tag ACP conversations created before local tracking existed
+    try {
+      if (!localStorage.getItem('aura:acpConversationsBackfilled')) {
+        const known = [
+          'bfce9d4b-236a-4772-8673-9d4d62487f63',
+          '0ad7778f-ede6-46a2-b904-2a50840e9ce9',
+          'ed5af8cc-bb65-4039-b8e6-1c943ce28956',
+          'b727632b-4b72-4c1d-91b4-908bed695cc3',
+        ];
+        known.forEach((id) => trackAcpConversation(id, 'agy-acp'));
+        localStorage.setItem('aura:acpConversationsBackfilled', '1');
+      }
+    } catch (e) {
+      console.error('[acp conversation backfill error]', e);
+    }
+
     const initWorkspace = async () => {
       let dir = workspaceDirRef.current;
       if (!dir) {
@@ -1231,10 +1324,26 @@ export function App() {
     focusActiveTerminal(id);
   };
 
-  const handleLaunchAgent = useCallback((agent: DetectedAgent) => {
+  const handleLaunchAgent = useCallback((agent: DetectedAgent, mode?: 'native' | 'acp') => {
     setIsBottomOpen(true);
-    const count = bottomTabsRef.current.filter((t) => t.agentCommand === agent.command || (t.type === 'opencode' && agent.command === 'opencode')).length;
+    // Explicit mode wins; otherwise infer from agent id (default to ACP for ACP-capable agents)
+    const useAcp = mode ? mode === 'acp' : isAcpAgent(agent.id);
     const id = `agent-${agent.id}-${Date.now()}`;
+    if (useAcp) {
+      const acpCount = bottomTabsRef.current.filter((t) => t.agentCommand === `acp:${agent.id}`).length;
+      const title = acpCount === 0 ? agent.name : `${agent.name} ${acpCount + 1}`;
+      const newBottomTab: BottomTab = {
+        id,
+        type: 'agent',
+        title,
+        agentCommand: `acp:${agent.id}`,
+        cwd: workspaceDirRef.current,
+      };
+      setBottomTabs((prev) => [...prev, newBottomTab]);
+      setActiveBottomTabId(id);
+      return;
+    }
+    const count = bottomTabsRef.current.filter((t) => t.agentCommand === agent.command || (t.type === 'opencode' && agent.command === 'opencode')).length;
     const title = count === 0 ? agent.name : `${agent.name} ${count + 1}`;
     const newBottomTab: BottomTab = {
       id,
@@ -1269,6 +1378,15 @@ export function App() {
 
     const currentTab = bottomTabsRef.current.find((t) => t.id === curTabId);
     if (!currentTab) return;
+    const isAcpTab = currentTab.agentCommand?.startsWith('acp:');
+    if (isAcpTab) {
+      setAcpStatusMap((prev) => {
+        if (!prev[curTabId]) return prev;
+        const next = { ...prev };
+        delete next[curTabId];
+        return next;
+      });
+    }
 
     const currentLayout: PaneLayoutNode = currentTab.rootLayout || { type: 'leaf', id: currentTab.id };
     const currentPanes = collectLeafPaneIds(currentLayout);
@@ -1276,8 +1394,16 @@ export function App() {
       ? focusedPaneIdRef.current
       : currentPanes[0];
 
+    const killPane = (pid: string) => {
+      if (isAcpTab) {
+        acpStop(pid);
+      } else {
+        killTerminalPTY(pid);
+      }
+    };
+
     if (currentPanes.length > 1) {
-      killTerminalPTY(focusedPane);
+      killPane(focusedPane);
       if (typeof window !== 'undefined' && (window as any).electronAPI?.terminalKill) {
         (window as any).electronAPI.terminalKill(focusedPane);
       }
@@ -1306,7 +1432,7 @@ export function App() {
     }
 
     currentPanes.forEach((pid) => {
-      killTerminalPTY(pid);
+      killPane(pid);
       if (typeof window !== 'undefined' && (window as any).electronAPI?.terminalKill) {
         (window as any).electronAPI.terminalKill(pid);
       }
@@ -1398,9 +1524,22 @@ export function App() {
   const handleCloseBottomTab = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const tabToClose = bottomTabsRef.current.find((t) => t.id === id);
+    const isAcpTab = tabToClose?.agentCommand?.startsWith('acp:');
+    if (isAcpTab) {
+      setAcpStatusMap((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
     const panesToKill = tabToClose ? collectLeafPaneIds(tabToClose.rootLayout || { type: 'leaf', id: tabToClose.id }) : [id];
     panesToKill.forEach((pid) => {
-      killTerminalPTY(pid);
+      if (isAcpTab) {
+        acpStop(pid);
+      } else {
+        killTerminalPTY(pid);
+      }
       if (typeof window !== 'undefined' && (window as any).electronAPI?.terminalKill) {
         (window as any).electronAPI.terminalKill(pid);
       }
@@ -1435,8 +1574,25 @@ export function App() {
   }, [savedSessions, isBottomOpen, activeBottomTabId]);
 
   const handleSelectSession = useCallback((session: AgentSessionItem) => {
+    const sessionCwd = session.projectPath || workspaceDir;
     const existing = bottomTabsRef.current.find((t) => t.id === session.id);
     setIsBottomOpen(true);
+    // ACP 会话按创建方式恢复：如果该会话是 ACP 产出，点开时用 ACP 方式并 session/load 重接，而不是原生 TUI
+    const acpAgentId = !existing ? getAcpConversationAgent(session.id) : null;
+    if (acpAgentId) {
+      const acpTab: BottomTab = {
+        id: session.id,
+        type: 'agent',
+        title: `${session.title} (ACP)`,
+        agentCommand: `acp:${acpAgentId}`,
+        cwd: sessionCwd,
+        resumeAgentSessionId: session.id,
+      };
+      setBottomTabs((prev) => [...prev, acpTab]);
+      setActiveBottomTabId(session.id);
+      focusActiveTerminal(session.id);
+      return;
+    }
     if (existing) {
       setActiveBottomTabId(existing.id);
       const leafPanes = collectLeafPaneIds(existing.rootLayout || { type: 'leaf', id: existing.id });
@@ -1458,8 +1614,6 @@ export function App() {
       } else if (idLower === 'codex' || cmdLower.includes('codex') || nameLower.includes('codex')) {
         resumeCmd = session.id ? `codex resume ${session.id}` : 'codex';
       }
-
-      const sessionCwd = session.projectPath || workspaceDir;
 
       const newTab: BottomTab = {
         id: session.id,
@@ -1508,6 +1662,13 @@ export function App() {
   }, [workspaceDir, refreshAgentSessions]);
 
   const handleDeleteSession = useCallback((sessionId: string) => {
+    // Resolve which agent owns this conversation:
+    //   1) Aura's ACP mapping (localStorage 'aura:acpConversations') — authoritative for ACP-created sessions
+    //   2) the session record Aura loaded from the agent DBs (savedSessions.agentId) — authoritative for everything else
+    //   3) nothing → the backend falls back to scanning all agent stores
+    const mappedAcpAgent = getAcpConversationAgent(sessionId);
+    const trackedAgent = mappedAcpAgent ?? savedSessions.find((s) => s.id === sessionId)?.agentId ?? null;
+
     handleCloseBottomTab(sessionId, { stopPropagation: () => {} } as any);
     setSavedSessions((prev) => {
       const next = prev.filter((s) => s.id !== sessionId);
@@ -1516,8 +1677,14 @@ export function App() {
       }
       return next;
     });
+    // Drop the local ACP mapping for this conversation (it's gone from the agent DB)
+    untrackAcpConversation(sessionId);
+    // /save 产生的本地 memo 文件同步删除（EverOS 云端记录无法撤回，保留历史）
+    memoryDeleteMemo(sessionId).catch((err) => {
+      console.error('Failed to delete /save memo for session:', sessionId, err);
+    });
     if (workspaceDir) {
-      deleteProjectAgentSession(workspaceDir, sessionId)
+      deleteProjectAgentSession(workspaceDir, sessionId, trackedAgent)
         .then(() => {
           refreshAgentSessions(workspaceDir);
         })
@@ -1525,7 +1692,7 @@ export function App() {
           console.error('Failed to delete session from SQLite:', err);
         });
     }
-  }, [handleCloseBottomTab, workspaceDir, refreshAgentSessions]);
+  }, [handleCloseBottomTab, workspaceDir, refreshAgentSessions, savedSessions]);
 
   const handleNewAgentSession = useCallback(() => {
     handleOpenOpenCodeTab();
@@ -1768,7 +1935,10 @@ export function App() {
         onOpenOpenCode={handleOpenOpenCodeTab}
         onSelectAgent={handleLaunchAgent}
         onRunInstallCommand={handleRunInstallCommand}
-        onOpenAddAgentModal={() => setIsAddAgentModalOpen(true)}
+        onOpenAddAgentModal={(mode?: 'native' | 'acp') => {
+          setAddAgentMode(mode ?? 'native');
+          setIsAddAgentModalOpen(true);
+        }}
         onToggleSidebar={handleToggleSidebar}
         onToggleBottom={handleToggleTerminalBottom}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -1823,7 +1993,10 @@ export function App() {
             onNewAgentSession={handleNewAgentSession}
             onSelectAgent={handleLaunchAgent}
             onRunInstallCommand={handleRunInstallCommand}
-            onOpenAddAgentModal={() => setIsAddAgentModalOpen(true)}
+            onOpenAddAgentModal={(mode?: 'native' | 'acp') => {
+          setAddAgentMode(mode ?? 'native');
+          setIsAddAgentModalOpen(true);
+        }}
             onOpenSettings={() => setIsSettingsOpen(true)}
           />
         </div>
@@ -1934,6 +2107,8 @@ export function App() {
               editingDockTabId={editingDockTabId}
               editingDockTabTitle={editingDockTabTitle}
               dockRenameInputRef={dockRenameInputRef}
+              acpStatus={acpStatusMap}
+              onAcpStatusChange={handleAcpStatusChange}
               onPaneFocus={(paneId) => {
                 focusedPaneIdRef.current = paneId;
               }}
@@ -1997,6 +2172,7 @@ export function App() {
       <AddAgentModal
         isOpen={isAddAgentModalOpen}
         onClose={() => setIsAddAgentModalOpen(false)}
+        mode={addAgentMode}
         onAgentAdded={(agent) => handleLaunchAgent(agent)}
       />
 
