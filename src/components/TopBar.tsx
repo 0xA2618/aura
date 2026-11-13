@@ -103,9 +103,9 @@ interface TopBarProps {
   onChangeView: (view: 'files' | 'git' | 'plugins') => void;
   onChangeWorkspaceDir: () => void;
   onOpenOpenCode: () => void;
-  onSelectAgent: (agent: DetectedAgent) => void;
+  onSelectAgent: (agent: DetectedAgent, mode?: 'native' | 'acp') => void;
   onRunInstallCommand: (installCmd: string, agentName: string) => void;
-  onOpenAddAgentModal: () => void;
+  onOpenAddAgentModal: (mode?: 'native' | 'acp') => void;
   onToggleSidebar?: () => void;
   onToggleBottom: () => void;
   onOpenSettings: () => void;
@@ -287,9 +287,9 @@ export const TopBar: React.FC<TopBarProps> = ({
             <AgentDropdownMenu
               isOpen={isAgentMenuOpen}
               onClose={() => setIsAgentMenuOpen(false)}
-              onSelectAgent={(agent) => {
+              onSelectAgent={(agent, mode) => {
                 setIsAgentMenuOpen(false);
-                onSelectAgent(agent);
+                onSelectAgent(agent, mode);
               }}
               onRunInstall={(cmd, name) => {
                 setIsAgentMenuOpen(false);

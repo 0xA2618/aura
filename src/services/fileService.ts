@@ -536,6 +536,8 @@ export interface DetectedAgent {
   is_installed: boolean;
   install_command: string;
   path?: string | null;
+  /** true when the agent exposes ACP (Agent Client Protocol) */
+  acp?: boolean;
 }
 
 export async function detectSystemAgents(): Promise<DetectedAgent[]> {
@@ -549,62 +551,60 @@ export async function detectSystemAgents(): Promise<DetectedAgent[]> {
   return [
     {
       id: 'opencode',
-      name: 'OpenCode Agent',
+      name: 'opencode',
       command: 'opencode',
       description: 'OpenCode CLI autonomous coding agent',
       category: 'coding',
       is_installed: true,
       install_command: 'npm install -g @opencode/cli || brew install opencode',
       path: '/opt/homebrew/bin/opencode',
+      acp: true,
     },
     {
       id: 'agy',
-      name: 'Antigravity Agent (AGY)',
+      name: 'agy cli',
       command: 'agy',
-      description: 'Google Antigravity CLI advanced agentic coding',
+      description: 'Google Antigravity CLI — native binary (terminal mode)',
       category: 'research',
       is_installed: true,
       install_command: 'npm install -g @google/antigravity-cli',
       path: '/Users/Yang/.local/bin/agy',
+      acp: false,
+    },
+    {
+      id: 'agy-acp',
+      name: 'agy acp',
+      command: 'agy',
+      description: 'Antigravity ACP — Agent Client Protocol (JSON-RPC over stdio)',
+      category: 'coding',
+      is_installed: true,
+      install_command: 'npm install -g @google/antigravity-cli',
+      path: '/Users/Yang/.local/bin/agy',
+      acp: true,
     },
     {
       id: 'codex',
-      name: 'Codex Agent',
+      name: 'codex',
       command: 'codex',
       description: 'OpenAI Codex CLI developer terminal assistant',
       category: 'terminal',
       is_installed: true,
       install_command: 'npm install -g @openai/codex',
       path: '/opt/homebrew/bin/codex',
+      acp: true,
     },
     {
       id: 'claude',
-      name: 'Claude Code',
+      name: 'claude',
       command: 'claude',
       description: 'Anthropic Claude Code command line agent',
       category: 'coding',
       is_installed: true,
       install_command: 'npm install -g @anthropic-ai/claude-code',
       path: '/Users/Yang/.local/bin/claude',
+      acp: true,
     },
   ];
-}
-
-export interface ScannedBinItem {
-  name: string;
-  path: string;
-  is_executable: boolean;
-}
-
-export async function scanLocalBin(): Promise<ScannedBinItem[]> {
-  if (isTauri) {
-    try {
-      return await invoke<ScannedBinItem[]>('system_scan_local_bin');
-    } catch (e) {
-      console.error('[scanLocalBin error]', e);
-    }
-  }
-  return [];
 }
 
 export async function registerCustomAgent(name: string, rawPath: string): Promise<DetectedAgent | null> {
@@ -626,6 +626,319 @@ export async function registerCustomAgent(name: string, rawPath: string): Promis
     install_command: '',
     path: rawPath,
   };
+}
+
+// ----------------- ACP (Agent Client Protocol) Wrappers -----------------
+
+export interface AcpSessionInfo {
+  id: string;
+  agent_id: string;
+  name: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  state: 'initializing' | 'active' | 'error' | 'terminated';
+}
+
+export interface AcpMessage {
+  type: 'message' | 'stderr' | 'error' | 'terminated';
+  data: any;
+}
+
+export interface AcpCapabilities {
+  fs: boolean;
+  terminal: boolean;
+  permission: boolean;
+  modes: string[];
+  authMethods: any[];
+}
+
+export interface AcpAgentInfo {
+  name: string;
+  protocolVersion: string;
+  capabilities: AcpCapabilities;
+}
+
+/** ACP agent definition as stored in ~/.config/aura/aura.json */
+export interface AcpAgentDef {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  enabled?: boolean;
+}
+
+/** Built-in defaults — used as seed for a fresh aura.json and as the pre-fetch cache */
+export const BUILTIN_ACP_AGENTS: AcpAgentDef[] = [
+  { id: 'agy-acp',    name: 'agy acp',      command: 'agy',          args: ['acp'] },
+  { id: 'opencode',   name: 'opencode acp', command: 'opencode',     args: ['acp'] },
+  { id: 'gemini',     name: 'gemini acp',   command: 'gemini',       args: ['--acp'] },
+  { id: 'claude',     name: 'claude acp',   command: 'npx',          args: ['@agentclientprotocol/claude-agent-acp'] },
+  { id: 'codex',      name: 'codex acp',    command: 'npx',          args: ['@agentclientprotocol/codex-acp'] },
+  { id: 'kimi',       name: 'kimi acp',     command: 'kimi',         args: ['acp'] },
+  { id: 'qwen',       name: 'qwen acp',     command: 'qwen',         args: ['--acp'] },
+  { id: 'cline',      name: 'cline acp',    command: 'cline',        args: ['--acp'] },
+  { id: 'goose',      name: 'goose acp',    command: 'goose',        args: ['acp'] },
+  { id: 'cursor-agent', name: 'cursor-agent acp', command: 'cursor-agent', args: ['acp'] },
+  { id: 'copilot',    name: 'copilot acp',  command: 'copilot',      args: ['--acp'] },
+  { id: 'auggie',     name: 'auggie acp',   command: 'npx',          args: ['@augmentcode/auggie', '--acp'] },
+  { id: 'kilo',       name: 'kilo acp',     command: 'npx',          args: ['@kilocode/cli', 'acp'] },
+  { id: 'pi',         name: 'pi acp',       command: 'npx',          args: ['pi-acp'] },
+  { id: 'vtcode',     name: 'vtcode acp',   command: 'vtcode',       args: ['acp'] },
+  { id: 'stakpak',    name: 'stakpak acp',  command: 'stakpak',      args: ['acp'] },
+  { id: 'fast-agent', name: 'fast-agent acp', command: 'uvx',        args: ['fast-agent-acp'] },
+  { id: 'devin',      name: 'devin acp',    command: 'devin',        args: ['acp'] },
+  { id: 'grok',       name: 'grok acp',     command: 'grok',         args: ['agent', 'stdio'] },
+];
+
+/** In-memory mirror of ~/.config/aura/aura.json agents.acp (seeded with built-ins) */
+let acpAgentsCache: AcpAgentDef[] = [...BUILTIN_ACP_AGENTS];
+
+/** Replace the in-memory ACP registry (called after fetching/saving or local edits) */
+export function setAcpAgentsCache(agents: AcpAgentDef[]) {
+  acpAgentsCache = agents;
+}
+
+/** Read the ACP agents from ~/.config/aura/aura.json via the Rust backend */
+export async function fetchAcpAgents(): Promise<AcpAgentDef[]> {
+  if (isTauri) {
+    try {
+      const agents = await invoke<AcpAgentDef[]>('config_read_acp_agents');
+      if (Array.isArray(agents)) {
+        setAcpAgentsCache(agents);
+        return agents;
+      }
+    } catch (e) {
+      console.error('[fetchAcpAgents error]', e);
+    }
+  }
+  setAcpAgentsCache([...BUILTIN_ACP_AGENTS]);
+  return [...BUILTIN_ACP_AGENTS];
+}
+
+/** Persist the ACP agents list back to ~/.config/aura/aura.json */
+export async function saveAcpAgents(agents: AcpAgentDef[]): Promise<boolean> {
+  if (isTauri) {
+    try {
+      const ok = await invoke<boolean>('config_write_acp_agents', { agents });
+      if (ok) setAcpAgentsCache(agents);
+      return !!ok;
+    } catch (e) {
+      console.error('[saveAcpAgents error]', e);
+      return false;
+    }
+  }
+  setAcpAgentsCache(agents);
+  return true;
+}
+
+/** Check if an agent id is configured as an ACP agent (config-driven) */
+export function isAcpAgent(agentId: string): boolean {
+  return acpAgentsCache.some((a) => a.id === agentId && a.enabled !== false);
+}
+
+// ----------------- ACP conversation tracking (local-only, per agent) -----------------
+
+const ACP_CONVERSATIONS_KEY = 'aura:acpConversations';
+const MAX_TRACKED_ACP_CONVERSATIONS = 200;
+
+export interface AcpConversationRecord {
+  id: string;
+  agentId: string;   // ACP agent id as configured, e.g. 'agy-acp', 'opencode', 'claude-acp'
+  createdAt: number; // ms epoch (0 = migrated from the legacy flat string[] format)
+}
+
+/** Read the tracked ACP conversation records (auto-migrates the legacy string[] shape) */
+function readAcpRecords(): AcpConversationRecord[] {
+  try {
+    const raw = localStorage.getItem(ACP_CONVERSATIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item): AcpConversationRecord =>
+        typeof item === 'string'
+          ? { id: item, agentId: 'agy-acp', createdAt: 0 }
+          : {
+              id: String(item?.id ?? ''),
+              agentId: String(item?.agentId ?? 'agy-acp'),
+              createdAt: Number(item?.createdAt ?? 0),
+            }
+      )
+      .filter((r) => r.id);
+  } catch {
+    return [];
+  }
+}
+
+/** Normalize an agent id to a family key (e.g. 'agy-acp' -> 'agy') */
+function agentFamily(agentId: string): string {
+  return agentId.toLowerCase().replace(/-acp$/, '');
+}
+
+/** Record a conversation id as created via the given ACP agent */
+export function trackAcpConversation(id: string, agentId: string): void {
+  if (!id) return;
+  try {
+    const records = readAcpRecords();
+    const idx = records.findIndex((r) => r.id === id);
+    if (idx >= 0) {
+      records[idx] = { ...records[idx], agentId };
+    } else {
+      records.unshift({ id, agentId, createdAt: Date.now() });
+    }
+    if (records.length > MAX_TRACKED_ACP_CONVERSATIONS) {
+      records.length = MAX_TRACKED_ACP_CONVERSATIONS;
+    }
+    localStorage.setItem(ACP_CONVERSATIONS_KEY, JSON.stringify(records));
+  } catch (e) {
+    console.error('[trackAcpConversation error]', e);
+  }
+}
+
+/** Ids of conversations created via ACP; pass a family key ('agy'|'opencode'|'claude'|'codex'|'gemini') to filter */
+export function getAcpConversations(agentId?: string): Set<string> {
+  const records = readAcpRecords();
+  if (!agentId) return new Set(records.map((r) => r.id));
+  const family = agentFamily(agentId);
+  return new Set(records.filter((r) => agentFamily(r.agentId) === family).map((r) => r.id));
+}
+
+/** The ACP agent that owns this conversation id, or null if Aura has no mapping */
+export function getAcpConversationAgent(id: string): string | null {
+  const found = readAcpRecords().find((r) => r.id === id);
+  return found ? found.agentId : null;
+}
+
+/** Remove a conversation id from the local ACP tracking map */
+export function untrackAcpConversation(id: string): void {
+  try {
+    const records = readAcpRecords().filter((r) => r.id !== id);
+    localStorage.setItem(ACP_CONVERSATIONS_KEY, JSON.stringify(records));
+  } catch (e) {
+    console.error('[untrackAcpConversation error]', e);
+  }
+}
+
+export interface MemorySaveResult {
+  memoPath: string;
+  created: boolean;
+  everos: { enabled: boolean; ok: boolean; taskId?: string | null; error?: string | null };
+}
+
+/** /save 的落盘 + EverOS 同步（Rust 侧：本地 markdown memo + curl 子进程 POST EverOS） */
+export async function memorySave(args: {
+  sessionId: string;
+  agentId: string;
+  agentSessionId?: string | null;
+  title: string;
+  workspace: string;
+  body: string;
+}): Promise<MemorySaveResult> {
+  if (!isTauri) {
+    throw new Error('Tauri backend required for /save');
+  }
+  return await invoke<MemorySaveResult>('memory_save', args);
+}
+
+export interface MemoryMemoDeleteResult {
+  deleted: string[];
+  count: number;
+}
+
+/** 会话删除时同步清理该会话产出的 /save memo 文件（EverOS 记忆云端不可删除，仅删本地） */
+export async function memoryDeleteMemo(sessionId: string): Promise<MemoryMemoDeleteResult> {
+  if (!isTauri) {
+    return { deleted: [], count: 0 };
+  }
+  return await invoke<MemoryMemoDeleteResult>('memory_delete_memo', { sessionId });
+}
+
+export async function acpStart(sessionId: string, agentId: string, cwd?: string, resumeAgentSessionId?: string): Promise<AcpAgentInfo> {
+  if (!isAcpAgent(agentId)) {
+    throw new Error(`ACP agent not supported: ${agentId}. Configure it in ~/.config/aura/aura.json (agents.acp) or use a built-in ACP agent.`);
+  }
+  if (isTauri) {
+    try {
+      const info = await invoke<AcpAgentInfo>('acp_initialize', { sessionId, agentId, cwd: cwd ?? null, resumeSessionId: resumeAgentSessionId ?? null });
+      return info;
+    } catch (e) {
+      console.error('[acpStart error]', e);
+      throw e;
+    }
+  }
+  throw new Error('Tauri backend required for ACP');
+}
+
+export async function acpStop(sessionId: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('acp_stop', { sessionId });
+    } catch (e) {
+      console.error('[acpStop error]', e);
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function acpSendPrompt(sessionId: string, message: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('acp_send_prompt', { sessionId, message });
+    } catch (e) {
+      console.error('[acpSendPrompt error]', e);
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function listenToAcpSession(sessionId: string, callback: (msg: AcpMessage) => void): Promise<() => void> {
+  if (isTauri) {
+    const unlistenMessage = await listen<AcpMessage>(`acp:session:${sessionId}`, (event) => {
+      try {
+        callback(event.payload);
+      } catch (e) {
+        console.error('[acp message callback error]', e);
+      }
+    });
+    const unlistenStderr = await listen<AcpMessage>(`acp:session:${sessionId}:stderr`, (event) => {
+      try {
+        callback(event.payload);
+      } catch (e) {
+        console.error('[acp stderr callback error]', e);
+      }
+    });
+    return () => {
+      unlistenMessage();
+      unlistenStderr();
+    };
+  }
+  return () => {};
+}
+
+export async function acpCancel(sessionId: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('acp_cancel', { sessionId });
+    } catch (e) {
+      console.error('[acpCancel error]', e);
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function acpSetConfigOption(sessionId: string, configId: string, value: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('acp_set_config_option', { sessionId, configId, value });
+    } catch (e) {
+      console.error('[acpSetConfigOption error]', e);
+      return false;
+    }
+  }
+  return false;
 }
 
 // Rust Backend Terminal PTY Wrappers
@@ -787,12 +1100,13 @@ export async function updateProjectAgentSessionTitle(workspaceDir: string, sessi
   return false;
 }
 
-export async function deleteProjectAgentSession(workspaceDir: string, sessionId: string): Promise<boolean> {
+export async function deleteProjectAgentSession(workspaceDir: string, sessionId: string, agentHint?: string | null): Promise<boolean> {
   if (isTauri) {
     try {
       return await invoke<boolean>('system_delete_project_agent_session', {
         workspaceDir,
         sessionId,
+        agentHint: agentHint ?? null,
       });
     } catch (e) {
       console.error('[Rust system_delete_project_agent_session error]', e);
