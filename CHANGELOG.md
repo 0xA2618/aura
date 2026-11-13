@@ -6,6 +6,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-11-14
+
+### 🌟 Executive Overview
+Aura IDE v1.2.0 brings full **Agent Client Protocol (ACP)** integration — every installed agent runs in a structured, streaming chat panel with model/permission pickers, a `/`-triggered command autocomplete (agent-advertised commands + Aura's client-side `/exit` `/usage` `/save`), session persistence with accurate ACP vs native resume semantics, precise per-agent session deletion, plus a batch of terminal IME/drag-drop reliability fixes.
+
+---
+
+### 🚀 What's New & Highlights
+
+#### 1. Agent Client Protocol (ACP) Integration
+- **Native ACP Panels**: Streaming assistant chunks, thinking traces, tool calls, plan updates rendered inline across `agy acp` / `opencode acp` / `claude acp` / `codex acp` / `gemini acp`.
+- **Config Pickers**: `configOptions` pushed by each agent surface as selectors in the panel footer — switch model, reasoning effort, permission modes at runtime.
+- **Slash-Command Autocomplete**: `/`-triggered fuzzy completion mixing agent-advertised commands (`available_commands_update`) with Aura-owned client commands (`/exit`, `/usage`, `/save`).
+- **Session Resume by Origin**: Sidebar rows distinguish ACP vs native with icons; clicking an ACP-originated conversation reopens it via ACP (`session/load`), native ones through the agent's native resume command.
+- **Scoped Session Delete**: Matching per agent — `agy` (`conversation_summaries` + `conversations/*.db` + `brain/`), `opencode` (`PRAGMA foreign_keys=ON; DELETE FROM session_v2…`), `codex` (`threads`), `claude` (`history.jsonl` rewrite) — plus deletion of the associated `/save` memo files.
+
+#### 2. Client-Side ACP Slash Commands
+- **`/save`**: Compresses the session into a markdown memo saved at `~/.config/aura/memos/<workspace>__<agent>__<session-id>.md` and synced to EverOS when `~/.config/aura/aura.json` carries `memory.everos.baseUrl` (default group `coding:<workspace>`).
+- **`/usage`**: Live context pressure rendered as `ctx` usage meter above the input row.
+- **`/exit`**: Terminates the ACP agent process and closes its dock tab.
+
+#### 3. Terminal Reliability
+- **Fullwidth IME Commit Fix**: First byte drop for macOS Pinyin fullwidth punctuation (`？`/`！`/`（`) resolved via capture-phase `beforeinput` workaround for xterm.js #6144.
+- **Shift+Enter = Newline in opencode**: xterm emits `\x1b\r` (META+Enter), matching opencode's Option+Enter newline.
+- **Quoted Drag-Drop Paths**: File drag into terminals and the ACP chat panel inserts `"absolute/path"` with quotes.
+
+#### 4. Sidebar & Session QoL
+- **Dir unified single-source tree**: new folders appear expanded; no stale subtree cache; create/rename/move refresh atomically from disk.
+- **Session Copy ID**: Context-menu `Copy` stores the native session id (e.g. `agy --conversation <id>`) to the clipboard.
+- **AutoCapitalize Disabled**: File/session rename inputs preserve exact typed casing.
+
+---
+
+### 🛠 Fixes
+- **Native Agent Launch via Binary**: Stripped `npm_*` / `pnpm_*` environment before launching native agents; no more `_jsr-registry` contamination failures.
+- **ACP Bridge Field Passthrough**: `availableCommands` now flows through the Rust forwarding layer (was dropped as noise).
+
+---
+
+### 📦 Detailed Commit Log
+- `8bc6950` chore(git): normalize lib.rs file mode to non-executable
+- `1e1592d` fix(terminal): quote drag paths, allow fullwidth IME symbols, map Shift+Enter to newline in opencode
+- `d952bb2` refactor(sidebar): unify Dir tree data source, add session Copy menu, disable autoCapitalize on inline inputs
+- `8b100e2` feat(acp): add agent picker ACP tab, chat panel, and session resume flow
+- `13449e6` feat(acp): integrate Agent Client Protocol with detection, resume, delete-mapping
+
+---
+
 ## [1.0.2] - 2026-11-09
 
 ### 🌟 Executive Overview

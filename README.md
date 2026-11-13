@@ -40,6 +40,35 @@
 
 ---
 
+
+## 🆕 What's New in v1.2.0 (ACP & Terminal Precision)
+
+### 🤖 Agent Client Protocol (ACP) Integration
+- **Full ACP Support**: Launch any installed ACP agent (`agy acp`, `opencode acp`, `claude acp`, `codex acp`, `gemini acp`) in its own panel — streaming assistant chunks, thinking traces, tool calls, and plan updates rendered inline.
+- **Config Pickers**: Model, reasoning effort, and permission mode selectors surface directly from `configOptions` pushed by the agent; runtime switching without reopening the panel.
+- **`available_commands` Autocomplete**: `/`-triggered fuzzy completion in the input box — both the agent's advertised commands (e.g. `/git-commit`) and Aura's local client commands (`/exit` quit, `/usage` context window, `/save` session memo) flow into a single grouped picker.
+- **Resume ACP Conversations Accurately**: Session rows distinguish ACP vs native icon; clicking an ACP-originated session reopens it through ACP (`session/load`), native ones through the native resume path (`agy --conversation`, `opencode --session`, `claude --resume`, `codex resume`).
+- **Scoped Session Delete**: Removing sessions now purges only the agent-specific native databases — `~/.gemini/antigravity-cli` (`conversation_summaries` + `conversations/*.db`), `~/.local/share/opencode/opencode.db`, `~/.codex/state_5.sqlite`, `~/.claude/history.jsonl` — and deletes their `/save` memo files.
+- **Agent Detection & Resume Cache**: known-agents.json with 5-minute TTL refresh, executable (`0o111`) checks across `~/.local/bin`, brew, nvm, pnpm, go paths.
+
+### 🌐 Slash-Commands & Session Memoization
+- **`/save`**: Compresses the session's insights to `~/.config/aura/memos/<workspace>__<agent>__<session-id>.md`; also syncs to EverOS if `~/.config/aura/aura.json` sets `memory.everos.baseUrl` (default-compatible groups `coding:<workspace>`).
+- **`/usage`**: Shows live context window pressure as a persistent `ctx` meter above the input row.
+- **`/exit`**: Kills the ACP agent process and closes its dock tab.
+
+### 🎹 Terminal IME & Drag-Drop Reliability
+- **Fullwidth Punctuation IME Fix**: macOS Pinyin commits (`？`, `！`, `（`) no longer get dropped on xterm.js ≥ 5.5 (upstream #6144; PR #6200 pending in 7.0.0 — included as a guarded capture-phase workaround).
+- **Shift+Enter = Newline in opencode**: `opencode` now interprets Shift+Enter (`\x1b\r`) as META+Enter (newline), matching its Option+Enter behavior.
+- **Drag → Quoting Consistent**: Dragging any file/folder (Dir tree, drop targets, ACP panel) inserts `"absolute/path"` with surrounding spaces, always quoted.
+- **Native Agent Launch Hygiene**: Launching native agents strips `npm_*` / `pnpm_*` environment variables to avoid contaminated `npm run` chain failures (`_jsr-registry` class of errors).
+
+### 🗂️ Sidebar & Session Quality of Life
+- **Dir Single-File Tree**: Dir section now uses a single unified state (`treeFiles`); new folders appear expanded, no stale `folderChildren` cache; create/rename/move inline refresh from disk atomically.
+- **Session Copy ID**: New right-click `Copy` entry copies the native session id to the clipboard.
+- **Auto-Capitalize Off**: Inline file/session rename inputs no longer force the first letter to uppercase (`autoCapitalize="none"`).
+
+---
+
 ## ⚡ Key Highlights (v1.1.0)
 
 ### 🗂️ Window 1: Dual-Section Sidebar (`Dir` & `Session`)
@@ -124,8 +153,8 @@ The unified title bar delivers essential project telemetry and quick global cont
 ### Installation
 
 Download prebuilt binaries for macOS from the [Releases](https://github.com/0xA2618/aura/releases) page:
-- **`Aura_1.1.0_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
-- **`Aura_1.1.0_x64.dmg`** (Intel Macs)
+- **`Aura_1.2.0_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
+- **`Aura_1.2.0_x64.dmg`** (Intel Macs)
 
 > **First Run Note (macOS Gatekeeper)**: If macOS displays *"App cannot be opened because developer cannot be verified"*, right-click `Aura.app` and choose **Open**, or run `xattr -cr /Applications/Aura.app` in Terminal.
 
