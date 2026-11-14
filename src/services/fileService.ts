@@ -881,10 +881,20 @@ export async function acpStop(sessionId: string): Promise<boolean> {
   return false;
 }
 
-export async function acpSendPrompt(sessionId: string, message: string): Promise<boolean> {
+export interface AcpPromptImagePayload {
+  data: string;      // base64（不含 data: 前缀）
+  mimeType: string;  // 例如 "image/png"
+}
+
+export async function acpSendPrompt(sessionId: string, message: string, images?: AcpPromptImagePayload[]): Promise<boolean> {
   if (isTauri) {
     try {
-      return await invoke<boolean>('acp_send_prompt', { sessionId, message });
+      // Tauri 将 camelCase 键反序列化为 Rust 侧 snake_case 参数 images: Vec<AcpPromptImage>
+      return await invoke<boolean>('acp_send_prompt', {
+        sessionId,
+        message,
+        images: images?.map((img) => ({ data: img.data, mimeType: img.mimeType })),
+      });
     } catch (e) {
       console.error('[acpSendPrompt error]', e);
       return false;

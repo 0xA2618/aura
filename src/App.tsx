@@ -445,6 +445,7 @@ const BottomDockArea = React.memo<BottomDockProps>(({
                         onSessionClose={(id) => onCloseDockTab(id, { stopPropagation: () => {} } as any)}
                         onStatusChange={onAcpStatusChange}
                         resumeAgentSessionId={bt.resumeAgentSessionId}
+                        fontSize={fontSize}
                       />
                     ) : (
                       <TerminalPane
@@ -750,6 +751,34 @@ export function App() {
     };
   }, []);
 
+  const switchToDockTabByIndex = useCallback((tabIndex: number) => {
+    const currentTabs = bottomTabsRef.current;
+    if (tabIndex < 0 || tabIndex >= currentTabs.length) return;
+    const targetId = currentTabs[tabIndex].id;
+    setActiveBottomTabId(targetId);
+
+    const attemptFocus = () => {
+      const activeContainer = document.getElementById('terminal-dock-container');
+      const dockEl = activeContainer?.querySelector(`div[data-dock-id="${targetId}"]`);
+      if (!dockEl) return;
+      const xterm = dockEl.querySelector('.xterm textarea') as HTMLElement | null;
+      if (xterm) { xterm.focus(); return; }
+      const anyTextarea = dockEl.querySelector('textarea') as HTMLTextAreaElement | null;
+      if (anyTextarea) anyTextarea.focus();
+    };
+    requestAnimationFrame(attemptFocus);
+    setTimeout(attemptFocus, 100);
+  }, [bottomTabsRef, setActiveBottomTabId]);
+
+  useEffect(() => {
+    const onSwitchDockTab = (e: Event) => {
+      const idx = (e as CustomEvent<{ index?: number }>).detail?.index;
+      if (typeof idx === 'number') switchToDockTabByIndex(idx);
+    };
+    window.addEventListener('aura:switch-dock-tab', onSwitchDockTab);
+    return () => window.removeEventListener('aura:switch-dock-tab', onSwitchDockTab);
+  }, [switchToDockTabByIndex]);
+
   useEffect(() => {
     let spacePressed = false;
     let spaceTimeout: any = null;
@@ -801,6 +830,14 @@ export function App() {
         }
         return;
       }
+
+      // Cmd/Ctrl+R：不再整页重载 —— 会杀掉 ACP 会话 / 终端 / 未保存编辑状态。
+      // ACP 输入区由其自身拦截为「软重连」；其余区域仅吞掉按键，杜绝整窗刷新。
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        e.stopPropagation();
+        return; // 静默吞掉，不弹提示
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
         e.stopPropagation();
@@ -813,21 +850,18 @@ export function App() {
           setTerminalFontSize((prev) => {
             const next = Math.min(28, prev + 1);
             localStorage.setItem('aura:terminalFontSize', String(next));
-            showToast(`终端 (Panel 3) 字号: ${next}px`);
             return next;
           });
         } else if (isFocusInWindow1) {
           setSidebarFontSize((prev) => {
             const next = Math.min(24, prev + 1);
             localStorage.setItem('aura:sidebarFontSize', String(next));
-            showToast(`侧边栏 (Panel 1) 字号: ${next}px`);
             return next;
           });
         } else {
           setEditorFontSize((prev) => {
             const next = Math.min(32, prev + 1);
             localStorage.setItem('aura:fontSize', String(next));
-            showToast(`编辑器 (Panel 2) 字号: ${next}px`);
             return next;
           });
         }
@@ -846,21 +880,18 @@ export function App() {
           setTerminalFontSize((prev) => {
             const next = Math.max(9, prev - 1);
             localStorage.setItem('aura:terminalFontSize', String(next));
-            showToast(`终端 (Panel 3) 字号: ${next}px`);
             return next;
           });
         } else if (isFocusInWindow1) {
           setSidebarFontSize((prev) => {
             const next = Math.max(10, prev - 1);
             localStorage.setItem('aura:sidebarFontSize', String(next));
-            showToast(`侧边栏 (Panel 1) 字号: ${next}px`);
             return next;
           });
         } else {
           setEditorFontSize((prev) => {
             const next = Math.max(9, prev - 1);
             localStorage.setItem('aura:fontSize', String(next));
-            showToast(`编辑器 (Panel 2) 字号: ${next}px`);
             return next;
           });
         }
@@ -930,31 +961,12 @@ export function App() {
         return;
       }
 
+      // ACP note: the ACP session's textarea is a normal DOM input and always
+      // forwards Cmd/Ctrl+1..9 to the window listener below, so no extra handling needed here.
       if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
-        const activeElem = document.activeElement;
-        const isFocusInWindow3 = activeElem?.closest('.xterm') || activeElem?.closest('#terminal-dock-container') || activeElem?.closest('textarea')?.closest('.xterm');
-        if (isFocusInWindow3) {
-          const tabIndex = parseInt(e.key, 10) - 1;
-          const currentTabs = bottomTabsRef.current;
-          if (tabIndex >= 0 && tabIndex < currentTabs.length) {
-            e.preventDefault();
-            e.stopPropagation();
-            const targetId = currentTabs[tabIndex].id;
-            setActiveBottomTabId(targetId);
-
-            setTimeout(() => {
-              const activeContainer = document.getElementById('terminal-dock-container');
-              const targetPanel = activeContainer?.querySelector(`div[data-dock-id="${targetId}"] .xterm textarea`) as HTMLElement;
-              if (targetPanel) {
-                targetPanel.focus();
-              } else {
-                const anyTextarea = document.querySelector('.xterm textarea') as HTMLElement;
-                if (anyTextarea) anyTextarea.focus();
-              }
-            }, 30);
-            return;
-          }
-        }
+        const tabIndex = parseInt(e.key, 10) - 1;
+        switchToDockTabByIndex(tabIndex);
+        return;
       }
     };
 
@@ -1089,6 +1101,19 @@ export function App() {
       forceNormalEditor
     );
   };
+
+  // Agent 输出里的文件路径（AcpMarkdown 里 <a href="./foo.ts">） — 在编辑器里打开
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<string>;
+      const raw = ce.detail;
+      if (!raw) return;
+      handleOpenFileByPath(raw).catch(() => {});
+    };
+    window.addEventListener('aura:open-file-path', handler as EventListener);
+    return () => window.removeEventListener('aura:open-file-path', handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceDir]);
 
   const handleOpenCommitDiff = async (commitHash: string, filePath: string) => {
     const diffId = `diff-${commitHash}-${filePath}`;
@@ -2160,7 +2185,7 @@ export function App() {
           setEditorFontFamily(updatedEditorFont);
           const updatedTermFont = localStorage.getItem('aura:terminalFontFamily') || 'JetBrains Mono';
           setTerminalFontFamily(updatedTermFont);
-          showToast(msg);
+          if (msg) showToast(msg);
         }}
       />
 

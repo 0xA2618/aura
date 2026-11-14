@@ -1229,15 +1229,30 @@ fn handle_acp_message(session_id: &str, app: &tauri::AppHandle, state: &AcpState
                 drop(sessions);
                 let _ = app.emit(&event, json!({ "type": "info", "data": { "protocolVersion": 1, "message": "ACP handshake complete" } }));
             } else if id == 2 {
-                // session/new OK
-                if let Some(sid) = msg.pointer("/result/sessionId").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                // session/new（或 resume 的 session/load）响应到达。
+                // agent 若未回带 sessionId（agy 的 session/load 响应可能没有 result.sessionId），
+                // 兜底用请求中的 resume id 触发 session_created，保证前端不卡在 "Starting…"。
+                let mut sessions = match state.sessions.lock() {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let fallback_sid = sessions.get(session_id).and_then(|s| s.agent_session_id.clone());
+                if let Some(s) = sessions.get_mut(session_id) {
+                    s.state = AcpSessionState::Active;
+                }
+                drop(sessions);
+                let sid = msg
+                    .pointer("/result/sessionId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or(fallback_sid);
+                if let Some(sid) = sid {
                     let mut sessions = match state.sessions.lock() {
                         Ok(s) => s,
                         Err(_) => return,
                     };
                     if let Some(s) = sessions.get_mut(session_id) {
                         s.agent_session_id = Some(sid.clone());
-                        s.state = AcpSessionState::Active;
                     }
                     drop(sessions);
                     let _ = app.emit(&event, json!({ "type": "session_created", "data": { "sessionId": sid } }));
@@ -1274,12 +1289,22 @@ fn handle_acp_message(session_id: &str, app: &tauri::AppHandle, state: &AcpState
                     }}));
                     return;
                 }
-                let payload = json!({
+                let mut payload = json!({
                     "sessionUpdate": update_type,
                     "title": update.get("title"),
                     "status": update.get("status"),
+                    "toolCallId": update.get("toolCallId"),
                     "content": extract_update_content(&update),
                 });
+                // 透传 usage_update 的 used/size（上下文占用），否则前端 /usage 永远收不到
+                if let Some(obj) = payload.as_object_mut() {
+                    if let Some(used) = update.get("used").cloned() {
+                        obj.insert("used".to_string(), used);
+                    }
+                    if let Some(size) = update.get("size").cloned() {
+                        obj.insert("size".to_string(), size);
+                    }
+                }
                 let _ = app.emit(&event, json!({ "type": "update", "data": payload }));
             }
             "session/request_permission" => {
@@ -1575,10 +1600,18 @@ fn acp_initialize(
     }))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AcpPromptImage {
+    data: String,      // base64（不含 data: 前缀）
+    mime_type: String, // 例如 "image/png"
+}
+
 #[tauri::command]
 fn acp_send_prompt(
     session_id: String,
     message: String,
+    images: Option<Vec<AcpPromptImage>>,
     state: State<'_, AcpState>,
 ) -> Result<bool, String> {
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
@@ -1592,13 +1625,31 @@ fn acp_send_prompt(
     let id = session.next_request_id;
     session.next_request_id += 1;
 
+    // ACP prompt 内容块：text + 可选 image（base64）；纯图片消息允许省略 text 块
+    let mut prompt_blocks: Vec<Value> = Vec::new();
+    if !message.trim().is_empty() {
+        prompt_blocks.push(json!({ "type": "text", "text": message }));
+    }
+    if let Some(imgs) = images {
+        for img in imgs.into_iter().take(5) {
+            prompt_blocks.push(json!({
+                "type": "image",
+                "data": img.data,
+                "mimeType": img.mime_type
+            }));
+        }
+    }
+    if prompt_blocks.is_empty() {
+        return Err("Empty prompt: no text and no images attached".to_string());
+    }
+
     let msg = json!({
         "jsonrpc": "2.0",
         "id": id,
         "method": "session/prompt",
         "params": {
             "sessionId": agent_session_id,
-            "prompt": [{ "type": "text", "text": message }]
+            "prompt": prompt_blocks
         }
     });
     write_jsonrpc(session.writer.as_mut().ok_or("No writer available")?, &msg)?;
