@@ -41,6 +41,22 @@
 ---
 
 
+
+## 🆕 What's New in v1.2.1 (ACP Polish)
+
+- **Tool one-liners**: `tool_call`/`tool_call_update` render as collapsible single-line summaries; click to expand.
+- **Image paste**: screenshots clip into the ACP prompt; the agent (with `image` support) receives them inline.
+- **Ctx popover**: click `Ctx n%` for a popover with exact `N tokens` and `n% used`.
+- **Fixed slot layout**: model / effort / mode chips never shift position; missing configs render `—`.
+- **Jump-to-bottom** + widened scrollbar + auto-scroll-on-open — resuming a long session lands you at the latest turn.
+- **Cmd+1..9** dock-tab switch anywhere — even inside ACP.
+- **Cmd+R** no longer reloads the app (ACP sessions used to get killed); in the ACP input, it performs a soft reconnect instead.
+- **Mermaid diagrams** render inline in ACP messages; agent tools land as tidy one-line summaries.
+- **ErrorBoundary**: ACP-rendering crashes now show a stack-trace card instead of a blank window.
+- **Sidebar**: `expandedProjects` v2 semantics (absent key = collapsed) with automatic migration.
+- **Theme UX**: settings apply inline without a toast; new `--aura-divider` variable for light-theme contrast.
+
+
 ## 🆕 What's New in v1.2.0 (ACP & Terminal Precision)
 
 ### 🤖 Agent Client Protocol (ACP) Integration
@@ -153,8 +169,8 @@ The unified title bar delivers essential project telemetry and quick global cont
 ### Installation
 
 Download prebuilt binaries for macOS from the [Releases](https://github.com/0xA2618/aura/releases) page:
-- **`Aura_1.2.0_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
-- **`Aura_1.2.0_x64.dmg`** (Intel Macs)
+- **`Aura_1.2.1_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
+- **`Aura_1.2.1_x64.dmg`** (Intel Macs)
 
 > **First Run Note (macOS Gatekeeper)**: If macOS displays *"App cannot be opened because developer cannot be verified"*, right-click `Aura.app` and choose **Open**, or run `xattr -cr /Applications/Aura.app` in Terminal.
 

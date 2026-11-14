@@ -6,6 +6,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-11-15
+
+### 🌟 Executive Overview
+Aura IDE v1.2.1 tightens the ACP panel into a polished, steerable chat surface: tool invocations render as compact collapsible one-liners, context usage is a first-class transient chip, images paste directly into the prompt, fixed-slot config chips never shift, and several resume/protocol edge cases are hardened. No behavior removed; the `/usage` client command remains available.
+
+---
+
+### 🚀 What's New & Highlights
+
+#### 1. ACP Tool One-Liners
+- **Collapsible tool calls** (`▸` / `✓`): `tool_call` + `tool_call_update` now render as single-line summaries grouped into a `ToolActivityGroup`; click to expand/collapse the full log.
+- **`toolCallId` passthrough**: Rust bridge forwards `toolCallId` so each `running` line pairs exactly with its corresponding `done` line — no more ambiguous status updates.
+- **Three-phase "Thinking" badge**: thinking / answering / running tools have distinct visuals and an elapsed-seconds ticker.
+
+#### 2. ACP Image Paste
+- **Paste screenshots**: `Cmd/Ctrl+V` of a screenshot (or any clipboard image) in the ACP prompt inserts it inline; sent to the agent as an image content block.
+- **Image previews inline**: attached images render as thumbnails above the input; multiple images supported (per-agent limits apply).
+
+#### 3. Ctx Chip
+- **`Ctx 3%` chip**: occupies the footer area; click to show a popover (`Context — N tokens — n% used`).
+- **Model-aware window cache**: `usage_update` `used`/`size` flow through the Rust bridge again, so the footer stays in sync across model switches; when absent, value is kept from the last event.
+
+#### 4. Fixed Slot Layout
+- **Model / reasoning effort / permission mode** render in fixed-order, fixed-width slots; missing configs render as `—` placeholder. Positions never shift when the agent advertises different option sets.
+
+#### 5. ACP Transcript Reliability
+- **Resume path fall-through**: `session/load` agent response without `sessionId` now synthesizes `session_created` and resumes properly instead of stalling at `Starting…`.
+- **Image blocks in `session/new` / `session/load`** paired to the same `agent_session_id` so replays are identical to live turns.
+- **appendToLastAssistantMessage** now appends to the newest `assistant` bubble (tool-line interleaves no longer drop chunks).
+- **Tool call done-pairing**: completed matches running precisely via `toolCallId`.
+
+#### 6. ACP Panel UX Polish
+- **Jump-to-bottom** floating button + 12px scrollbar + auto-scroll-on-open.
+- **Cmd+1..9 switches dock tabs** from anywhere, including inside the ACP input.
+- **Cmd+R** no longer reloads the app (ACP sessions used to get killed); in the ACP input it triggers a **soft reconnect**; anywhere else it does nothing.
+- **Image attachments visual**: drag-and-drop quoted paths (existing) + `{{image:N}}` inline preview.
+- **Mermaid diagrams** render inline in ACP messages via `AcpMarkdown`.
+- **ErrorBoundary** wraps the app tree — React render crashes surface a real stack trace instead of a white rectangle.
+
+#### 7. Theme & UI
+- **Settings**: changes apply to the document immediately and persist; theme toast removed (`"设置已成功保存"` no longer shown).
+- **Light theme divider**: deeper `--aura-divider` (`#94a3b8`); dark theme uses `#3f3f46`.
+- **Logo font smoothing** for body element.
+
+#### 8. Sidebar QoL
+- **`expandedProjects` v2**: missing/absent project key = collapsed; migration from legacy `collapsedProjects` flips words (`true`=expanded, `false`=collapsed) automatically; existing layouts keep working.
+
+---
+
+### 🛠 Fixes
+- ACP resume fallback coordinator: ensures first `usage_update` decorates ctx meter correctly.
+- `/exit` no longer emits extra messages post-kill.
+- Settings theme change applies inline (removes a past toast dependency).
+
+---
+
 ## [1.2.0] - 2026-11-14
 
 ### 🌟 Executive Overview
