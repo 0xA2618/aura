@@ -162,6 +162,7 @@ export function applyThemeToDocument(theme: ThemeDefinition) {
   const accentHover = theme.ui.accentHover || theme.ui.accent;
 
   root.style.setProperty('--aura-app-bg', theme.ui.appBg);
+  root.style.setProperty('--aura-bg', theme.ui.appBg);
   root.style.setProperty('--aura-sidebar-bg', theme.ui.sidebarBg);
   root.style.setProperty('--aura-sidebar-fg', theme.ui.text);
   root.style.setProperty('--aura-sidebar-header-bg', sidebarHeaderBg);
@@ -177,6 +178,8 @@ export function applyThemeToDocument(theme: ThemeDefinition) {
   root.style.setProperty('--aura-bg-elevated', elevatedBg);
   root.style.setProperty('--aura-input-bg', inputBg);
   root.style.setProperty('--aura-border', theme.ui.border);
+  // 专用于大分隔线：light 下使用更显眼的 slate-400，dark 下使用 zinc-700
+  root.style.setProperty('--aura-divider', isLight ? '#94a3b8' : '#3f3f46');
   root.style.setProperty('--aura-text', theme.ui.text);
   root.style.setProperty('--aura-text-muted', theme.ui.textMuted);
   root.style.setProperty('--aura-accent', theme.ui.accent);

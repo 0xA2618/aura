@@ -166,7 +166,7 @@ interface SettingsModalProps {
   onChangeWorkspace?: () => void;
   onChangeLang?: (lang: SupportedLang) => void;
   onChangeTheme: (themeId: string) => void;
-  onSaveToast: (msg: string) => void;
+  onSaveToast: (msg?: string) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -282,7 +282,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     localStorage.setItem('aura:mpeTocVisible', String(defaultShowToc));
     applyThemeToDocument(getThemeById(theme));
     onChangeTheme(theme);
-    onSaveToast(t.settingsSaved);
+    onSaveToast('');
     onClose();
   };
 
@@ -382,6 +382,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }))}
                   onChange={(nextTheme) => {
                     setTheme(nextTheme);
+                    localStorage.setItem('aura:theme', nextTheme);
                     onChangeTheme(nextTheme);
                   }}
                 />

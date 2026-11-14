@@ -257,3 +257,22 @@ html, body, #root {
 .aura-btn-danger:active {
   transform: scale(0.98);
 }
+
+/* ACP 消息区滚动条：加宽 + 常显，方便拖动 */
+.acp-messages-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.acp-messages-scroll::-webkit-scrollbar-thumb {
+  background: #525252;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}
+.acp-messages-scroll::-webkit-scrollbar-thumb:hover {
+  background: #6b6b6b;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.acp-messages-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
