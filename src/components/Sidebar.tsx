@@ -302,10 +302,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return list;
   }, [agentSessions, workspaceDir, currentProjectName, favoriteProjects, deletedProjects]);
 
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>(() => {
+  // 新语义（v2）：没有 explicit 展开记录 = 默认折叠（全展开仅用户主动点开）
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = localStorage.getItem('aura:collapsedProjects');
-      return saved ? JSON.parse(saved) : {};
+      const savedV2 = localStorage.getItem('aura:expandedProjects');
+      if (savedV2) return JSON.parse(savedV2);
+      // 从旧 key（aura:collapsedProjects: true = 折叠，false/缺失 = 展开）一次性迁移
+      const savedV1 = localStorage.getItem('aura:collapsedProjects');
+      if (savedV1) {
+        const collapsed = JSON.parse(savedV1);
+        const expanded: Record<string, boolean> = {};
+        for (const path of Object.keys(collapsed)) {
+          if (collapsed[path] === false) expanded[path] = true;
+        }
+        return expanded;
+      }
+      return {};
     } catch {
       return {};
     }
@@ -313,9 +325,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const toggleProjectCollapse = (projectPath: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setCollapsedProjects((prev) => {
-      const next = { ...prev, [projectPath]: !prev[projectPath] };
-      localStorage.setItem('aura:collapsedProjects', JSON.stringify(next));
+    setExpandedProjects((prev) => {
+      const next = { ...prev };
+      if (next[projectPath]) {
+        delete next[projectPath];
+      } else {
+        next[projectPath] = true;
+      }
+      localStorage.setItem('aura:expandedProjects', JSON.stringify(next));
       return next;
     });
   };
@@ -1386,7 +1403,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {isSessionsExpanded && (
           <div className="flex-1 overflow-y-auto py-1 px-1.5 space-y-1 no-scrollbar">
             {projectGroups.map((group, idx) => {
-              const isProjCollapsed = !!collapsedProjects[group.projectPath];
+              const isProjCollapsed = !expandedProjects[group.projectPath];
               const pKey = group.projectPath || group.projectName;
               const isFav = favoriteProjects.includes(pKey) || favoriteProjects.includes(group.projectName);
               const prevGroup = idx > 0 ? projectGroups[idx - 1] : null;
