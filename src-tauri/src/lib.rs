@@ -1453,6 +1453,34 @@ fn run_acp_session_reader(
     }
 }
 
+/// Build a PATH that includes user-level CLI directories for spawned agent processes — macOS
+/// GUI apps launched from Dock/Finder see only /usr/bin:/bin:/usr/sbin:/sbin otherwise.
+fn augmented_path_string() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs: Vec<String> = vec![
+        format!("{}/.local/bin", home),
+        format!("{}/.opencode/bin", home),
+        format!("{}/.cargo/bin", home),
+        format!("{}/.gemini/antigravity-cli/bin", home),
+        format!("{}/.gemini/bin", home),
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/sbin".to_string(),
+    ];
+    if let Ok(extra) = std::env::var("PATH") {
+        for p in extra.split(':') {
+            if !p.is_empty() && !dirs.iter().any(|d| d == p) {
+                dirs.push(p.to_string());
+            }
+        }
+    }
+    dirs.join(":")
+}
+
 #[tauri::command]
 fn acp_initialize(
     app: tauri::AppHandle,
@@ -1493,9 +1521,12 @@ fn acp_initialize(
         return Err(format!("Working directory does not exist: {}", cwd_str));
     }
 
+    // Use a PATH that finds user-installed CLIs even when Aura is launched from Dock/Finder
+    // (Apple gives macOS GUI apps PATH=/usr/bin:/bin:/usr/sbin:/sbin which misses ~/.local/bin, ~/.opencode/bin, brew, nvm, etc.)
     let mut cmd = Command::new(&command);
     cmd.args(&args)
         .current_dir(&cwd_path)
+        .env("PATH", augmented_path_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
