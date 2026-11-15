@@ -44,6 +44,14 @@
 
 
 
+
+## 🆕 What's New in v1.2.4 (ACP Icon Persistence)
+
+- **ACP session icons survive restart**: ACP-tracked session IDs now live on disk at `~/.gemini/antigravity-cli/.aura-acp-sessions.json` — restarts/cache wipes no longer roll icons back to native agent icons.
+
+---
+
+
 ## 🆕 What's New in v1.2.3 (ACP Spawn Fix)
 
 - **ACP agents launch correctly from Dock/Finder**: spawned ACP processes now see user-level directories in `PATH` (ag install via `~/.local/bin`, brew, etc.), not just macOS defaults.
@@ -185,8 +193,8 @@ The unified title bar delivers essential project telemetry and quick global cont
 ### Installation
 
 Download prebuilt binaries for macOS from the [Releases](https://github.com/0xA2618/aura/releases) page:
-- **`Aura_1.2.3_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
-- **`Aura_1.2.3_x64.dmg`** (Intel Macs)
+- **`Aura_1.2.4_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
+- **`Aura_1.2.4_x64.dmg`** (Intel Macs)
 
 > **First Run Note (macOS Gatekeeper)**: If macOS displays *"App cannot be opened because developer cannot be verified"*, right-click `Aura.app` and choose **Open**, or run `xattr -cr /Applications/Aura.app` in Terminal.
 

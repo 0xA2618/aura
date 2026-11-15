@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ---
 ---
+---
+
+## [1.2.4] - 2026-11-15
+
+### 🌟 Executive Overview
+Patch release that fixes ACP session icon persistence: previously WebKit localStorage could lose the ACP-session tracking map on restart, causing the sidebar to render the native `agy` icon instead of the ACP supplier one. ACP-tracked IDs now persist to `~/.gemini/antigravity-cli/.aura-acp-sessions.json` (plain JSON, atomic write) in addition to localStorage; the sidebar seeds localStorage from the disk file at first launch, so ACP session icons stay correct across restarts.
+
+### 🛠 Fixes
+- **ACP session tracking persists on disk**: new Rust commands `system_track_acp_session` / `system_untrack_acp_session` / `system_get_acp_tracked_sessions` back `~/.gemini/antigravity-cli/.aura-acp-sessions.json`. `trackAcpConversation` / `untrackAcpConversation` now dual-write to both WebKit localStorage and this file.
+- **Sidebar seeds from the file when memory is empty**: on first launch or after a WebKit cache wipe, the sidebar reads the disk list and repaints all known ACP sessions with the cyan ACP supplier icon.
+- **First install of this version**: if the disk file is empty and `localStorage` still holds markers, the sidebar migrates those IDs into the disk file automatically.
 
 ## [1.2.3] - 2026-11-15
 
