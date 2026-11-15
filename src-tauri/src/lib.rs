@@ -2402,6 +2402,16 @@ fn system_fetch_project_agent_sessions(workspace_dir: String) -> Result<Vec<Agen
         });
     }
 
+    // Apply Aura-side rename overrides last — agy/opencode/codex DBs may be rewritten by the agent at any time
+    let renames = read_session_renames(&home);
+    if !renames.is_empty() {
+        for s in sessions.iter_mut() {
+            if let Some(t) = renames.get(&s.id) {
+                s.title = t.clone();
+            }
+        }
+    }
+
     Ok(sessions)
 }
 
@@ -2442,6 +2452,11 @@ fn system_update_project_agent_session_title(
     }
     let escaped_title = sql_escape_string(clean_title);
     let escaped_id = sql_escape_string(&session_id);
+
+    // Also persist an Aura-side override so the rename survives whichever store wins the race
+    let mut renames = read_session_renames(&home);
+    renames.insert(session_id.clone(), clean_title.to_string());
+    let _ = write_session_renames(&home, &renames);
 
     // 1. Antigravity-CLI SQLite DB
     let agy_db = PathBuf::from(&home).join(".gemini/antigravity-cli/conversation_summaries.db");
@@ -2658,6 +2673,12 @@ fn system_delete_project_agent_session(
             deleted_any |= delete_codex_session(&home, &session_id);
             deleted_any |= delete_claude_session(&home, &session_id);
         }
+    }
+
+    // Drop any rename override for the deleted session
+    let mut renames = read_session_renames(&home);
+    if renames.remove(&session_id).is_some() {
+        let _ = write_session_renames(&home, &renames);
     }
 
     Ok(deleted_any)
@@ -2930,6 +2951,36 @@ fn write_tracked_acp_ids(home: &str, ids: &[String]) -> Result<(), String> {
     let path = acp_track_path(home);
     let json = serde_json::to_string(ids).map_err(|e| e.to_string())?;
     fs::write(&path, &json).map_err(|e| e.to_string())
+}
+
+// ----------------- Session rename overrides (survive agy/opencode/codex rewriting their own DBs) -----------------
+
+fn session_rename_path(home: &str) -> PathBuf {
+    PathBuf::from(home).join(".gemini/antigravity-cli/.aura-session-renames.json")
+}
+
+fn read_session_renames(home: &str) -> std::collections::HashMap<String, String> {
+    let path = session_rename_path(home);
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    serde_json::from_str::<Value>(&content)
+        .ok()
+        .and_then(|v| v.as_object().cloned())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn write_session_renames(home: &str, map: &std::collections::HashMap<String, String>) -> Result<(), String> {
+    let dir = PathBuf::from(home).join(".gemini/antigravity-cli");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = session_rename_path(home);
+    let tmp = path.with_extension("json.tmp");
+    let json = serde_json::to_string(map).map_err(|e| e.to_string())?;
+    fs::write(&tmp, &json).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
