@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ---
 ---
+---
+
+## [1.2.6] - 2026-11-15
+
+### 🌟 Executive Overview
+Patch release that completes session-rename persistence for the agy store: Aura's rename previously updated the DB but agy startup re-wrote `conversation_summaries.title` from its own snapshot (`jetbox_summaries_proto.pb`), rolling renames back. Renames now also rewrite the `.pb` inner-title and the annotation `.pbtxt`; deletes now remove the `.pb` entry, the annotation, and `implicit/<id>.pb` so deleted sessions can't be resurrected.
+
+### 🛠 Fixes
+- **Rename syncs the agy snapshot index**: `system_update_project_agent_session_title` now rewrites the matching entry's inner title in `jetbox_summaries_proto.pb` (generic protobuf wire-format decoder/encoder, no new deps, atomic write) in addition to the DB `UPDATE` and the v1.2.5 override layer. The annotation `annotations/<id>.pbtxt` title is synced too.
+- **Delete prevents resurrection**: `system_delete_project_agent_session` now drops the matching `.pb` entry, the annotation, and `implicit/<id>.pb`, so an Aura-side delete is not undone by the next agy startup.
 
 ## [1.2.5] - 2026-11-15
 

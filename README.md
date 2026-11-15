@@ -46,6 +46,15 @@
 
 
 
+
+## 🆕 What's New in v1.2.6 (Rename Stays Put)
+
+- **Renames no longer roll back**: renaming a session now syncs `jetbox_summaries_proto.pb` and the annotation file as well as the DB and the rename-override layer — agy cannot revert the title on its next startup.
+- **Deletes are final**: deleting a session removes its `.pb` entry and annotations too, so it never reappears after a restart.
+
+---
+
+
 ## 🆕 What's New in v1.2.5 (Session Rename Persistence)
 
 - **Session renames stick across restarts**: Aura now keeps its own rename-override store (`~/.gemini/antigravity-cli/.aura-session-renames.json`); no matter how the agent CLI rewrites its own state DB, your renamed titles survive every launch.
@@ -201,8 +210,8 @@ The unified title bar delivers essential project telemetry and quick global cont
 ### Installation
 
 Download prebuilt binaries for macOS from the [Releases](https://github.com/0xA2618/aura/releases) page:
-- **`Aura_1.2.5_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
-- **`Aura_1.2.5_x64.dmg`** (Intel Macs)
+- **`Aura_1.2.6_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
+- **`Aura_1.2.6_x64.dmg`** (Intel Macs)
 
 > **First Run Note (macOS Gatekeeper)**: If macOS displays *"App cannot be opened because developer cannot be verified"*, right-click `Aura.app` and choose **Open**, or run `xattr -cr /Applications/Aura.app` in Terminal.
 
