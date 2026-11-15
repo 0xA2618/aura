@@ -2458,6 +2458,21 @@ fn system_update_project_agent_session_title(
     renames.insert(session_id.clone(), clean_title.to_string());
     let _ = write_session_renames(&home, &renames);
 
+    // Sync agy's snapshot index (.pb) and annotation title so agy startup cannot roll the title back
+    let pb_path = PathBuf::from(&home).join(".gemini/antigravity-cli/jetbox_summaries_proto.pb");
+    if pb_path.exists() {
+        if let Err(e) = pb_sync_inner_title(&pb_path, &session_id, clean_title) {
+            eprintln!("[rename] pb title sync failed for {}: {}", session_id, e);
+        }
+    }
+    let ann_path = PathBuf::from(&home)
+        .join(".gemini/antigravity-cli")
+        .join("annotations")
+        .join(format!("{}.pbtxt", session_id));
+    if ann_path.exists() {
+        let _ = sync_annotation_inner_title(&ann_path, clean_title);
+    }
+
     // 1. Antigravity-CLI SQLite DB
     let agy_db = PathBuf::from(&home).join(".gemini/antigravity-cli/conversation_summaries.db");
     if agy_db.exists() {
@@ -2673,6 +2688,26 @@ fn system_delete_project_agent_session(
             deleted_any |= delete_codex_session(&home, &session_id);
             deleted_any |= delete_claude_session(&home, &session_id);
         }
+    }
+
+    // Prevent agy from resurrecting the deleted session from its own snapshots
+    let pb_path = PathBuf::from(&home).join(".gemini/antigravity-cli/jetbox_summaries_proto.pb");
+    if pb_path.exists() {
+        let _ = pb_remove_entries(&pb_path, &session_id);
+    }
+    let implicit = PathBuf::from(&home)
+        .join(".gemini/antigravity-cli")
+        .join("implicit")
+        .join(format!("{}.pb", session_id));
+    if implicit.exists() {
+        let _ = fs::remove_file(&implicit);
+    }
+    let ann = PathBuf::from(&home)
+        .join(".gemini/antigravity-cli")
+        .join("annotations")
+        .join(format!("{}.pbtxt", session_id));
+    if ann.exists() {
+        let _ = fs::remove_file(&ann);
     }
 
     // Drop any rename override for the deleted session
@@ -2981,6 +3016,261 @@ fn write_session_renames(home: &str, map: &std::collections::HashMap<String, Str
     let json = serde_json::to_string(map).map_err(|e| e.to_string())?;
     fs::write(&tmp, &json).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+// ----------------- jetbox_summaries_proto.pb title sync -----------------
+// agy 启动时从 .pb 快照回写 conversation_summaries.title，导致 Aura 的重命名被冲掉。
+// 这里用通用 protobuf 解码/编码把 .pb 中对应 entry 的 inner-title 同步为新标题。
+// 任何一步解析失败都原样返回，不动 .pb。
+
+fn pb_read_varint(buf: &[u8], mut pos: usize) -> Option<(u64, usize)> {
+    let mut shift = 0u32;
+    let mut result: u64 = 0;
+    loop {
+        let b = *buf.get(pos)?;
+        pos += 1;
+        result |= ((b & 0x7F) as u64) << shift;
+        if b & 0x80 == 0 {
+            break;
+        }
+        shift += 7;
+        if shift >= 70 {
+            return None;
+        }
+    }
+    Some((result, pos))
+}
+
+fn pb_encode_varint(mut v: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(10);
+    loop {
+        let b = (v & 0x7F) as u8;
+        v >>= 7;
+        if v != 0 {
+            out.push(b | 0x80);
+        } else {
+            out.push(b);
+            break;
+        }
+    }
+    out
+}
+
+#[derive(Clone)]
+enum PbValue {
+    Varint(u64),
+    Fixed64(Vec<u8>),
+    LengthDelimited(Vec<u8>),
+    Fixed32(Vec<u8>),
+}
+
+struct PbField {
+    field_num: u64,
+    wire_type: u64,
+    value: PbValue,
+}
+
+fn pb_parse_fields(buf: &[u8]) -> Option<Vec<PbField>> {
+    let mut pos = 0usize;
+    let mut out = Vec::new();
+    while pos < buf.len() {
+        let (tag, new_pos) = pb_read_varint(buf, pos)?;
+        pos = new_pos;
+        let field_num = tag >> 3;
+        let wire_type = tag & 7;
+        if field_num == 0 {
+            return None;
+        }
+        match wire_type {
+            0 => {
+                let (v, new_pos) = pb_read_varint(buf, pos)?;
+                pos = new_pos;
+                out.push(PbField { field_num, wire_type: 0, value: PbValue::Varint(v) });
+            }
+            1 => {
+                if pos + 8 > buf.len() {
+                    return None;
+                }
+                out.push(PbField { field_num, wire_type: 1, value: PbValue::Fixed64(buf[pos..pos + 8].to_vec()) });
+                pos += 8;
+            }
+            5 => {
+                if pos + 4 > buf.len() {
+                    return None;
+                }
+                out.push(PbField { field_num, wire_type: 5, value: PbValue::Fixed32(buf[pos..pos + 4].to_vec()) });
+                pos += 4;
+            }
+            2 => {
+                let (len, lpos) = pb_read_varint(buf, pos)?;
+                let end = lpos.checked_add(len as usize)?;
+                if end > buf.len() {
+                    return None;
+                }
+                out.push(PbField { field_num, wire_type: 2, value: PbValue::LengthDelimited(buf[lpos..end].to_vec()) });
+                pos = end;
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+fn pb_serialize_fields(fields: &[PbField]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for f in fields {
+        out.extend(pb_encode_varint((f.field_num << 3) | f.wire_type));
+        match &f.value {
+            PbValue::Varint(v) => out.extend(pb_encode_varint(*v)),
+            PbValue::Fixed64(b) | PbValue::Fixed32(b) => out.extend_from_slice(b),
+            PbValue::LengthDelimited(b) => {
+                out.extend(pb_encode_varint(b.len() as u64));
+                out.extend_from_slice(b);
+            }
+        }
+    }
+    out
+}
+
+fn pb_entry_conversation_id(payload: &[u8]) -> Option<String> {
+    let ef = pb_parse_fields(payload)?;
+    for efld in ef.iter() {
+        if efld.field_num == 1 && efld.wire_type == 2 {
+            if let PbValue::LengthDelimited(id_bytes) = &efld.value {
+                return std::str::from_utf8(id_bytes).ok().map(|s| s.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn pb_sync_inner_title(pb_path: &Path, conversation_id: &str, new_title: &str) -> Result<bool, String> {
+    let raw = fs::read(pb_path).map_err(|e| e.to_string())?;
+    let top = pb_parse_fields(&raw).ok_or_else(|| "unsupported or corrupt .pb structure".to_string())?;
+    let mut changed = false;
+    let mut out_fields = Vec::with_capacity(top.len());
+    for field in top {
+        let mut keep = field;
+        if keep.field_num == 1 && keep.wire_type == 2 {
+            if let PbValue::LengthDelimited(payload) = &keep.value {
+                if let Some(ef) = pb_parse_fields(payload) {
+                    let mut cid: Option<String> = None;
+                    for efld in ef.iter() {
+                        if efld.field_num == 1 && efld.wire_type == 2 {
+                            if let PbValue::LengthDelimited(id_bytes) = &efld.value {
+                                if let Ok(s) = std::str::from_utf8(id_bytes) {
+                                    cid = Some(s.to_string());
+                                }
+                            }
+                        }
+                    }
+                    if cid.as_deref() == Some(conversation_id) {
+                        let mut new_ef = Vec::with_capacity(ef.len());
+                        for efld in ef {
+                            if efld.field_num == 2 && efld.wire_type == 2 {
+                                if let PbValue::LengthDelimited(sub_bytes) = &efld.value {
+                                    if let Some(sub_fields) = pb_parse_fields(sub_bytes) {
+                                        let mut new_sub = Vec::with_capacity(sub_fields.len());
+                                        for s in sub_fields {
+                                            if s.field_num == 1 && s.wire_type == 2 {
+                                                new_sub.push(PbField {
+                                                    field_num: 1,
+                                                    wire_type: 2,
+                                                    value: PbValue::LengthDelimited(new_title.as_bytes().to_vec()),
+                                                });
+                                            } else {
+                                                new_sub.push(s);
+                                            }
+                                        }
+                                        new_ef.push(PbField {
+                                            field_num: 2,
+                                            wire_type: 2,
+                                            value: PbValue::LengthDelimited(pb_serialize_fields(&new_sub)),
+                                        });
+                                        changed = true;
+                                        continue;
+                                    }
+                                }
+                            }
+                            new_ef.push(efld);
+                        }
+                        keep = PbField {
+                            field_num: 1,
+                            wire_type: 2,
+                            value: PbValue::LengthDelimited(pb_serialize_fields(&new_ef)),
+                        };
+                    }
+                }
+            }
+        }
+        out_fields.push(keep);
+    }
+    if !changed {
+        return Ok(false);
+    }
+    let out = pb_serialize_fields(&out_fields);
+    let tmp = pb_path.with_extension("pb-titlesync.tmp");
+    fs::write(&tmp, &out).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, pb_path).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn pb_remove_entries(pb_path: &Path, conversation_id: &str) -> Result<bool, String> {
+    let raw = fs::read(pb_path).map_err(|e| e.to_string())?;
+    let top = pb_parse_fields(&raw).ok_or_else(|| "unsupported or corrupt .pb structure".to_string())?;
+    let mut removed = false;
+    let mut out_fields = Vec::with_capacity(top.len());
+    for field in top {
+        let is_match = match (&field.wire_type, &field.value) {
+            (2, PbValue::LengthDelimited(payload)) => {
+                field.field_num == 1 && pb_entry_conversation_id(payload).as_deref() == Some(conversation_id)
+            }
+            _ => false,
+        };
+        if is_match {
+            removed = true;
+        } else {
+            out_fields.push(field);
+        }
+    }
+    if !removed {
+        return Ok(false);
+    }
+    let out = pb_serialize_fields(&out_fields);
+    let tmp = pb_path.with_extension("pb-deletesync.tmp");
+    fs::write(&tmp, &out).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, pb_path).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// agy 的 annotation pbtxt 只含 title 一行；改写它避免 agy 恢复会话时把旧标题带回来
+fn sync_annotation_inner_title(ann_path: &Path, new_title: &str) -> bool {
+    if new_title.contains('"') || new_title.contains('\\') {
+        return false; // pbtxt 转义规则复杂，放弃而不是写坏
+    }
+    let content = match fs::read_to_string(ann_path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let marker = "title:\"";
+    let start = match content.find(marker) {
+        Some(s) => s + marker.len(),
+        None => return false,
+    };
+    let end_rel = match content[start..].find('"') {
+        Some(e) => e,
+        None => return false,
+    };
+    let mut new_content = String::with_capacity(content.len() + new_title.len());
+    new_content.push_str(&content[..start]);
+    new_content.push_str(new_title);
+    new_content.push_str(&content[start + end_rel..]);
+    let tmp = ann_path.with_extension("pbtxt-titlesync.tmp");
+    if fs::write(&tmp, new_content.as_bytes()).is_ok() {
+        fs::rename(&tmp, ann_path).is_ok()
+    } else {
+        false
+    }
 }
 
 #[tauri::command]
