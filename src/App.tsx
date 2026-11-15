@@ -665,17 +665,23 @@ export function App() {
     // Prime the config-driven ACP registry (~/.config/aura/aura.json)
     fetchAcpAgents().catch(() => {});
 
-    // One-time backfill: tag ACP conversations created before local tracking existed
+    // One-shot startup reconcile: tag ACP-created conversations that predate ACP tracking
+    // (manually-verified ids from the agy ACP integration launch period + new sessions tagged on resume).
     try {
-      if (!localStorage.getItem('aura:acpConversationsBackfilled')) {
-        const known = [
+      const BACKFILLED_KEY = 'aura:acpConversationsBackfilled';
+      const lastBackfill = Number(localStorage.getItem(BACKFILLED_KEY) ?? '0');
+      if (lastBackfill < 2) {
+        const knownAcid = [
           'bfce9d4b-236a-4772-8673-9d4d62487f63',
           '0ad7778f-ede6-46a2-b904-2a50840e9ce9',
           'ed5af8cc-bb65-4039-b8e6-1c943ce28956',
           'b727632b-4b72-4c1d-91b4-908bed695cc3',
+          'bfb9d11e-ef7b-4a6e-8d23-9794282576b9',
+          '3341903e-081e-4eb1-a841-0188978fd0dc',
+          'c227ef85-b229-4c28-9677-dbcd40f3089c',
         ];
-        known.forEach((id) => trackAcpConversation(id, 'agy-acp'));
-        localStorage.setItem('aura:acpConversationsBackfilled', '1');
+        knownAcid.forEach((id) => trackAcpConversation(id, 'agy-acp'));
+        localStorage.setItem(BACKFILLED_KEY, '2');
       }
     } catch (e) {
       console.error('[acp conversation backfill error]', e);
