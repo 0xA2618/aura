@@ -5,6 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+---
+
+## [1.2.2] - 2026-11-15
+
+### 🌟 Executive Overview
+Patch release that corrects the sidebar icon for ACP-originated sessions whose local tracking predates the ACP integration's per-session bookmark (introduced v1.2.0). ACP sessions now correctly display with the cyan ACP supplier icon after upgrade — no manual steps required.
+
+---
+
+### 🛠 Fixes
+- **ACP session tracking reconcile**: v1.2.0-legacy ACP sessions (and any extra ACP sessions since then) were not recorded in `aura:acpConversations` in localStorage, causing the sidebar to render the native agy icon instead of the ACP supplier icon. The startup reconcile was updated to v2 — it now tags 3 additional manually-verified ACP session IDs (`3341903e-081e-4eb1-a841-0188978fd0dc`, `c227ef85-b229-4c28-9677-dbcd40f3089c`, `bfb9d11e-ef7b-4a6e-8d23-9794282576b9`) and uses `Number(localStorage['aura:acpConversationsBackfilled']) >= 2` as the idempotency guard, replacing the simple '1' flag.
+- **Existing installs**: on first launch of v1.2.2, the reconcile runs once and stamps `aura:acpConversationsBackfilled = 2`; never runs again.
+
+### 📦 Detailed Commit Log
+- `2708953` fix(acp): backfill v2 — mark 3341903e & c227ef85 as agy-acp sessions
 
 ## [1.2.1] - 2026-11-15
 

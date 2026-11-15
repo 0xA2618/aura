@@ -42,6 +42,14 @@
 
 
 
+
+## 🆕 What's New in v1.2.2 (ACP session icon fix)
+
+- **ACP session card fix**: ACP conversations that predate v1.2.0 now render with the cyan ACP supplier icon in the sidebar — first launch of v1.2.2 stamps them once.
+
+---
+
+
 ## 🆕 What's New in v1.2.1 (ACP Polish)
 
 - **Tool one-liners**: `tool_call`/`tool_call_update` render as collapsible single-line summaries; click to expand.
@@ -169,8 +177,8 @@ The unified title bar delivers essential project telemetry and quick global cont
 ### Installation
 
 Download prebuilt binaries for macOS from the [Releases](https://github.com/0xA2618/aura/releases) page:
-- **`Aura_1.2.1_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
-- **`Aura_1.2.1_x64.dmg`** (Intel Macs)
+- **`Aura_1.2.2_aarch64.dmg`** (Apple Silicon M1/M2/M3/M4)
+- **`Aura_1.2.2_x64.dmg`** (Intel Macs)
 
 > **First Run Note (macOS Gatekeeper)**: If macOS displays *"App cannot be opened because developer cannot be verified"*, right-click `Aura.app` and choose **Open**, or run `xattr -cr /Applications/Aura.app` in Terminal.
 
