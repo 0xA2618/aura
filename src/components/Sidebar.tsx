@@ -9,6 +9,8 @@ import {
   fetchCommitChangedFiles,
   fetchGitStatus,
   getAcpConversations,
+  fetchAcpTrackedSessions,
+  trackAcpConversation,
   DetectedAgent,
 } from '../services/fileService';
 import {
@@ -161,6 +163,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isDirDockedBottom, setIsDirDockedBottom] = useState<boolean>(() => {
     return localStorage.getItem('aura:sidebarDirDockedBottom') === 'true';
   });
+  // ACP 会话 ID 持久化到 ~/.gemini/antigravity-cli/.aura-acp-sessions.json（不随 WebKit 缓存丢失）
+  const [trackedAcpIds, setTrackedAcpIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    fetchAcpTrackedSessions().then((ids) => {
+      if (cancelled) return;
+      if (ids.length > 0) {
+        setTrackedAcpIds(new Set(ids));
+        return;
+      }
+      try {
+        const raw = localStorage.getItem('aura:acpConversations');
+        const parsed = raw ? JSON.parse(raw) : [];
+        const seed: string[] = Array.isArray(parsed)
+          ? parsed.map((x: any) => (typeof x === 'string' ? x : String(x?.id ?? ''))).filter((s: string) => !!s)
+          : [];
+        if (seed.length > 0) {
+          seed.forEach((id) => trackAcpConversation(id, 'agy-acp'));
+          if (!cancelled) setTrackedAcpIds(new Set(seed));
+        }
+      } catch {
+        // ignore corrupt localStorage
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
 
   const [sessionHeight, setSessionHeight] = useState<number>(() => {
@@ -411,11 +441,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const renderSessionAgentIcon = (name: string, command: string = '', agentId: string = '', sessionId: string = '') => {
     const lower = (name + ' ' + command + ' ' + agentId).toLowerCase();
-    if (lower.includes('agy') && sessionId && getAcpConversations('agy').has(sessionId)) {
-      // Session created via agy acp — cyan ACP flame marker
+    if (lower.includes('agy') && sessionId && (trackedAcpIds.has(sessionId) || getAcpConversations('agy').has(sessionId))) {
+      // Session created via agy acp — cyan ACP flame marker (rust file or localStorage, whichever hit)
       return <AntigravityAcpIcon size={14} className="shrink-0" />;
     }
-    if (lower.includes('opencode') && sessionId && getAcpConversations('opencode').has(sessionId)) {
+    if (lower.includes('opencode') && sessionId && (trackedAcpIds.has(sessionId) || getAcpConversations('opencode').has(sessionId))) {
       return <OpenCodeIcon size={14} className="text-[#4ea8de] shrink-0" />;
     }
     if (lower.includes('claude')) {

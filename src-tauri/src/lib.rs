@@ -2904,6 +2904,66 @@ fn terminal_kill(
     Ok(false)
 }
 
+// ----------------- ACP session tracking (persisted to disk so icons survive restarts) -----------------
+
+fn acp_track_path(home: &str) -> PathBuf {
+    PathBuf::from(home).join(".gemini/antigravity-cli/.aura-acp-sessions.json")
+}
+
+fn read_tracked_acp_ids(home: &str) -> Vec<String> {
+    let path = acp_track_path(home);
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    serde_json::from_str::<Value>(&content)
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn write_tracked_acp_ids(home: &str, ids: &[String]) -> Result<(), String> {
+    let dir = PathBuf::from(home).join(".gemini/antigravity-cli");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = acp_track_path(home);
+    let json = serde_json::to_string(ids).map_err(|e| e.to_string())?;
+    fs::write(&path, &json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn system_track_acp_session(session_id: String, _agent_id: String) -> Result<Value, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Yang".to_string());
+    let mut ids = read_tracked_acp_ids(&home);
+    if !ids.iter().any(|id| id == &session_id) {
+        ids.push(session_id);
+        if ids.len() > 200 {
+            ids.drain(..ids.len() - 200);
+        }
+        write_tracked_acp_ids(&home, &ids)?;
+    }
+    Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
+fn system_untrack_acp_session(session_id: String) -> Result<Value, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Yang".to_string());
+    let ids = read_tracked_acp_ids(&home)
+        .into_iter()
+        .filter(|id| id != &session_id)
+        .collect::<Vec<_>>();
+    write_tracked_acp_ids(&home, &ids)?;
+    Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
+fn system_get_acp_tracked_sessions() -> Result<Value, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Yang".to_string());
+    let ids = read_tracked_acp_ids(&home);
+    Ok(json!({ "ids": ids }))
+}
+
 #[tauri::command]
 fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
@@ -3014,6 +3074,9 @@ pub fn run() {
             system_fetch_project_agent_sessions,
             system_update_project_agent_session_title,
             system_delete_project_agent_session,
+            system_track_acp_session,
+            system_untrack_acp_session,
+            system_get_acp_tracked_sessions,
             terminal_create,
             terminal_ready,
             terminal_write,

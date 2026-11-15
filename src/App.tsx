@@ -558,7 +558,13 @@ export function App() {
   const [acpStatusMap, setAcpStatusMap] = useState<Record<string, AcpConnStatus>>({});
   const handleAcpStatusChange = useCallback((id: string, status: AcpConnStatus) => {
     setAcpStatusMap((prev) => (prev[id] === status ? prev : { ...prev, [id]: status }));
-  }, []);
+    // ACP session just became connected — DB row for this session was created by the agent now,
+    // so re-fetch sidebar sessions immediately instead of waiting for window focus.
+    if (status === 'connected') {
+      refreshAgentSessions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshAgentSessions]);
 
   // Top-Right Editor Tabs
   const [tabs, setTabs] = useState<OpenTab[]>([]);

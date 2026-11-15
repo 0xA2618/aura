@@ -793,6 +793,11 @@ export function trackAcpConversation(id: string, agentId: string): void {
   } catch (e) {
     console.error('[trackAcpConversation error]', e);
   }
+  if (isTauri) {
+    invoke<any>('system_track_acp_session', { sessionId: id, agentId }).catch((e) => {
+      console.error('[system_track_acp_session error]', e);
+    });
+  }
 }
 
 /** Ids of conversations created via ACP; pass a family key ('agy'|'opencode'|'claude'|'codex'|'gemini') to filter */
@@ -816,6 +821,23 @@ export function untrackAcpConversation(id: string): void {
     localStorage.setItem(ACP_CONVERSATIONS_KEY, JSON.stringify(records));
   } catch (e) {
     console.error('[untrackAcpConversation error]', e);
+  }
+  if (isTauri) {
+    invoke<any>('system_untrack_acp_session', { sessionId: id }).catch((e) => {
+      console.error('[system_untrack_acp_session error]', e);
+    });
+  }
+}
+
+/** Read ACP-tracked session IDs from ~/.gemini/antigravity-cli/.aura-acp-sessions.json (survives WebKit cache wipes) */
+export async function fetchAcpTrackedSessions(): Promise<string[]> {
+  if (!isTauri) return [];
+  try {
+    const res = await invoke<{ ids: string[] }>('system_get_acp_tracked_sessions');
+    return Array.isArray(res?.ids) ? res.ids.map(String) : [];
+  } catch (e) {
+    console.error('[fetchAcpTrackedSessions error]', e);
+    return [];
   }
 }
 
