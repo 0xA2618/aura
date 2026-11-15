@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ---
 ---
+---
+
+## [1.2.5] - 2026-11-15
+
+### 🌟 Executive Overview
+Patch release that fixes the session rename regression: a session renamed inside Aura reverted to the agent-owned title (e.g. `Chat History And Memory`) on next launch. Root cause: `agy` rewrites `conversation_summaries.title` from its own internal state, clobbering Aura's rename. Aura now maintains its own rename-override store and applies it last on every session fetch.
+
+### 🛠 Fixes
+- **Session rename overrides**: Aura persists renamed titles to `~/.gemini/antigravity-cli/.aura-session-renames.json` (atomic write). `system_update_project_agent_session_title` now writes this override in addition to the cross-DB `UPDATE`s; `system_fetch_project_agent_sessions` applies the override after merging the agy / opencode / codex / claude stores, so no agent-side rewrite can roll the title back.
+- **Overrides pruned on delete**: `system_delete_project_agent_session` removes the corresponding override, keeping the store bounded and consistent.
 
 ## [1.2.4] - 2026-11-15
 
