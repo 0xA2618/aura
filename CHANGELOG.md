@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 ---
+---
+
+## [1.2.3] - 2026-11-15
+
+### 🌟 Executive Overview
+Patch release that fixes ACP sessions not launching in production builds where Aura is run as a macOS GUI app from Dock/Finder. Aura-spawned agent processes now inherit an augmented PATH that includes user-level tool directories (~/.local/bin, ~/.opencode/bin, ~/.cargo/bin, brew, ~/.gemini/antigravity-cli/bin, ~/.gemini/bin).
+
+### 🛠 Fixes
+- **ACP agent spawn PATH**: macOS GUI apps launched from Dock see only `PATH=/usr/bin:/bin:/usr/sbin:/sbin`. Aura now augments the PATH for spawned ACP agent processes so `agy`, `opencode`, `claude`, `codex`, `gemini` and user-defined ACP agents resolve correctly (e.g. `/Users/Yang/.local/bin/agy`).
 
 ## [1.2.2] - 2026-11-15
 
