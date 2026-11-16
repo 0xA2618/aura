@@ -10,6 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
 import { AddAgentModal } from './components/AddAgentModal';
 import { GitModal } from './components/GitModal';
+import { ProvidersModal } from './components/ProvidersModal';
 import {
   FileItem,
   OpenTab,
@@ -621,6 +622,7 @@ export function App() {
   const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
   const [addAgentMode, setAddAgentMode] = useState<'native' | 'acp'>('native');
   const [isGitModalOpen, setIsGitModalOpen] = useState(false);
+  const [isProvidersModalOpen, setIsProvidersModalOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string>('');
   const [isCornerHovered, setIsCornerHovered] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1980,6 +1982,7 @@ export function App() {
         onToggleBottom={handleToggleTerminalBottom}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenGitModal={() => setIsGitModalOpen(true)}
+        onOpenProvidersModal={() => setIsProvidersModalOpen(true)}
       />
 
       <div className={`flex flex-1 p-0.5 gap-0 overflow-hidden ${isResizing ? 'select-none pointer-events-auto' : ''}`}>
@@ -2211,6 +2214,12 @@ export function App() {
         onClose={() => setIsAddAgentModalOpen(false)}
         mode={addAgentMode}
         onAgentAdded={(agent) => handleLaunchAgent(agent)}
+      />
+
+      <ProvidersModal
+        isOpen={isProvidersModalOpen}
+        onClose={() => setIsProvidersModalOpen(false)}
+        onRestartOpencode={() => handleOpenOpenCodeTab()}
       />
 
       <GitModal

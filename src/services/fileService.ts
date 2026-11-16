@@ -1147,3 +1147,327 @@ export async function deleteProjectAgentSession(workspaceDir: string, sessionId:
   }
   return false;
 }
+
+// ----------------- OpenCode provider 管理（~/.config/opencode/opencode.json providers 段） -----------------
+
+export type OpencodeProviderMap = Record<string, any>;
+
+/** 读取 opencode.json 的 providers 段（桌面端原子写入） */
+export async function fetchOpencodeProviders(): Promise<OpencodeProviderMap> {
+  if (!isTauri) return {};
+  try {
+    const res = await invoke<{ providers: OpencodeProviderMap; legacyProvider?: OpencodeProviderMap }>(
+      'system_get_opencode_providers'
+    );
+    return res?.providers ?? {};
+  } catch (e) {
+    console.error('[fetchOpencodeProviders error]', e);
+    return {};
+  }
+}
+
+/** 插入/覆盖一个 provider（不保留调用方 JSON 里的其他字段以外的 opencode.json 顶层键都会原样保留） */
+export async function upsertOpencodeProvider(id: string, provider: any): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_upsert_opencode_provider', { providerId: id, provider });
+    return true;
+  } catch (e) {
+    console.error('[upsertOpencodeProvider error]', e);
+    return false;
+  }
+}
+
+/** 从 opencode.json 删除一个 provider 键 */
+export async function deleteOpencodeProvider(id: string): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_delete_opencode_provider', { providerId: id });
+    return true;
+  } catch (e) {
+    console.error('[deleteOpencodeProvider error]', e);
+    return false;
+  }
+}
+
+export type OpencodeProviderProtocol = 'openai' | 'anthropic' | 'google';
+
+export interface FetchModelsResult {
+  models: string[];
+  error?: string;
+}
+
+/** 抓取某个 provider 的模型列表（curl 子进程，按 protocol 处理鉴权头） */
+export async function fetchOpencodeModels(
+  baseUrl: string,
+  apiKey: string,
+  protocol: OpencodeProviderProtocol
+): Promise<FetchModelsResult> {
+  if (!isTauri) return { models: [], error: 'Not available outside Tauri' };
+  try {
+    const res = await invoke<{ models: string[] }>('system_fetch_opencode_models', {
+      baseUrl,
+      apiKey,
+      protocol,
+    });
+    return { models: Array.isArray(res?.models) ? res.models : [] };
+  } catch (e: any) {
+    return { models: [], error: String(e?.message ?? e) };
+  }
+}
+
+// ----------------- opencode 进程退出 / 重启 -----------------
+
+export interface OpencodeSessionInfo {
+  pid: number;
+  command: string;
+}
+
+/** 列出将被"确认重启"影响到的 opencode 进程（仅 argv0 恰好为 opencode 的，排除本进程链）*/
+export async function previewOpencodeSessions(): Promise<OpencodeSessionInfo[]> {
+  if (!isTauri) return [];
+  try {
+    const res = await invoke<{ sessions: OpencodeSessionInfo[] }>('system_preview_opencode_sessions');
+    return Array.isArray(res?.sessions) ? res.sessions : [];
+  } catch (e) {
+    console.error('[previewOpencodeSessions error]', e);
+    return [];
+  }
+}
+
+/** SIGTERM 所有匹配的 opencode 进程（超时后 SIGKILL），返回关闭数量 */
+export async function restartOpencode(): Promise<{ killed: number }> {
+  if (!isTauri) return { killed: 0 };
+  try {
+    const res = await invoke<{ killed: number }>('system_restart_opencode');
+    return { killed: res?.killed ?? 0 };
+  } catch (e) {
+    console.error('[restartOpencode error]', e);
+    return { killed: 0 };
+  }
+}
+
+// ----------------- opencode 本地代理（端口 2618，key 轮询 + 健康检测） -----------------
+
+export interface OpencodeProxyKeyStatus {
+  index: number;
+  enabled: boolean;
+  requests: number;
+  failures: number;
+  lastError?: string | null;
+}
+
+export interface OpencodeProxyProviderStatus {
+  protocol: string;
+  upstream: string;
+  enabled: boolean;
+  note?: string | null;
+  targets?: Record<string, boolean>;
+  enabledKeys: number;
+  totalKeys: number;
+  cursor: number;
+  keys: OpencodeProxyKeyStatus[];
+}
+
+export interface OpencodeProxyStatus {
+  ok: boolean;
+  port: number;
+  providers: Record<string, OpencodeProxyProviderStatus>;
+}
+
+export async function fetchOpencodeProxyStatus(): Promise<OpencodeProxyStatus> {
+  if (!isTauri) return { ok: true, port: 2618, providers: {} };
+  try {
+    return await invoke<OpencodeProxyStatus>('system_opencode_proxy_status');
+  } catch (e) {
+    console.error('[fetchOpencodeProxyStatus error]', e);
+    return { ok: true, port: 2618, providers: {} };
+  }
+}
+
+/** 重启代理监听新端口并把所有已启用 provider 的 baseURL 指向新端口 */
+export async function reloadOpencodeProxyPort(port: number): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_opencode_reload_port', { port });
+    return true;
+  } catch (e) {
+    console.error('[reloadOpencodeProxyPort error]', e);
+    return false;
+  }
+}
+
+/** 切换 provider 的 on/off：off 时从 opencode.json 移除条目；on 时重新注入代理条目 */
+export async function setOpencodeProviderEnabled(id: string, enabled: boolean): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_opencode_set_provider_enabled', { providerId: id, enabled });
+    return true;
+  } catch (e) {
+    console.error('[setOpencodeProviderEnabled error]', e);
+    return false;
+  }
+}
+
+/** 手动标记/恢复某个 key 的轮询资格 */
+export async function setOpencodeKeyEnabled(id: string, keyIndex: number, enabled: boolean): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_opencode_set_key_enabled', { providerId: id, keyIndex, enabled });
+    return true;
+  } catch (e) {
+    console.error('[setOpencodeKeyEnabled error]', e);
+    return false;
+  }
+}
+
+export interface KeyTestResult {
+  ok: boolean;
+  http: number;
+  models?: number;
+  error?: string | null;
+}
+
+/** 用指定 key 测上游 /models（走代理 /_proxy/test） */
+export async function testOpencodeKey(id: string, keyIndex: number): Promise<KeyTestResult> {
+  if (!isTauri) return { ok: false, http: 0, error: 'Not Tauri' };
+  try {
+    return await invoke<KeyTestResult>('system_opencode_test_key', { providerId: id, keyIndex });
+  } catch (e: any) {
+    return { ok: false, http: 0, error: String(e?.message ?? e) };
+  }
+}
+
+/** 保存某个 provider 的 key 池（整体替换；≥2 key 触发 round-robin；note 为 aura 内部备注） */
+export async function upsertOpencodeProviderPool(
+  id: string,
+  protocol: OpencodeProviderProtocol,
+  upstream: string,
+  keys: string[],
+  enabled: boolean,
+  note?: string
+): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_opencode_upsert_provider_pool', {
+      providerId: id,
+      protocol,
+      upstream,
+      keys,
+      enabled,
+      note: note?.trim() ? note.trim() : null,
+    });
+    return true;
+  } catch (e) {
+    console.error('[upsertOpencodeProviderPool error]', e);
+    return false;
+  }
+}
+
+/** 删除 provider 的 key 池（同时从 opencode.json 删除该 provider） */
+export async function deleteOpencodeProviderPool(id: string): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_opencode_delete_provider_pool', { providerId: id });
+    return true;
+  } catch (e) {
+    console.error('[deleteOpencodeProviderPool error]', e);
+    return false;
+  }
+}
+
+// ----------------- opencode 本地代理全局 on/off -----------------
+
+export interface OpencodeProxyGlobalInfo {
+  enabled: boolean;
+  port: number;
+}
+
+/** 读取代理全局开关状态（默认 enabled=true, port=2618） */
+export async function fetchOpencodeProxyGlobal(): Promise<OpencodeProxyGlobalInfo> {
+  if (!isTauri) return { enabled: true, port: 2618 };
+  try {
+    return await invoke<OpencodeProxyGlobalInfo>('system_opencode_proxy_global_get');
+  } catch (e) {
+    console.error('[fetchOpencodeProxyGlobal error]', e);
+    return { enabled: true, port: 2618 };
+  }
+}
+
+/** 全局开关：
+ *  on → 把 aura pool / 备份还原写入 opencode.json，并把 baseURL 改写为本地代理
+ *  off → 备份当前 opencode.json providers，然后清空，opencode 重启后无任何 provider 走代理 */
+export async function setOpencodeProxyGlobal(enabled: boolean): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    await invoke('system_opencode_proxy_global_set', { enabled });
+    return true;
+  } catch (e) {
+    console.error('[setOpencodeProxyGlobal error]', e);
+    return false;
+  }
+}
+
+/** 获取某个 provider 的全部 key（用于编辑回填） */
+export async function fetchOpencodeProviderKeys(id: string): Promise<string[]> {
+  if (!isTauri) return [];
+  try {
+    const res = await invoke<{ keys: string[] }>('system_opencode_get_provider_keys', { providerId: id });
+    return Array.isArray(res?.keys) ? res.keys : [];
+  } catch (e) {
+    console.error('[fetchOpencodeProviderKeys error]', e);
+    return [];
+  }
+}
+
+/** 用 Rust(curl) 对指定 provider 的 model 做一次 /chat/completions 探测 */
+export interface ChatProbeResult {
+  ok: boolean;
+  http: number;
+  preview?: string;
+  body?: string;
+  error?: string;
+}
+
+export async function probeOpencodeModel(providerId: string, modelId: string): Promise<ChatProbeResult> {
+  if (!isTauri) return { ok: false, http: 0, error: 'Not Tauri' };
+  try {
+    return await invoke<ChatProbeResult>('system_opencode_chat_probe', { providerId, modelId });
+  } catch (e: any) {
+    return { ok: false, http: 0, error: String(e?.message ?? e) };
+  }
+}
+
+/** Phase 2: 把某个 provider 注入/移除指定 agent CLI 的配置（claude → settings.json env；codex → config.toml） */
+export async function setOpencodeProviderTarget(
+  providerId: string,
+  agent: string,
+  enabled: boolean
+): Promise<{ ok: boolean; enabled?: boolean; message?: string; error?: string }> {
+  if (!isTauri) return { ok: false, error: 'Not Tauri' };
+  try {
+    return await invoke('system_opencode_set_provider_target', { providerId, agent, enabled });
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message ?? e) };
+  }
+}
+
+/** 用给定的协议/baseURL/key 直接探测一次 model；不需要对方 provider 已保存到 aura pool */
+export async function probeOpencodeModelWithCreds(
+  protocol: string,
+  upstream: string,
+  apiKey: string,
+  modelId: string
+): Promise<ChatProbeResult> {
+  if (!isTauri) return { ok: false, http: 0, error: 'Not Tauri' };
+  try {
+    return await invoke<ChatProbeResult>('system_opencode_probe_model_with_creds', {
+      protocol,
+      upstream,
+      apiKey,
+      modelId,
+    });
+  } catch (e: any) {
+    return { ok: false, http: 0, error: String(e?.message ?? e) };
+  }
+}

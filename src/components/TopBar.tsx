@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { Settings, Bot, ChevronDown, GitBranch } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Settings, Bot, ChevronDown, GitBranch, Plug } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { isTauri, startWindowDragging, DetectedAgent } from '../services/fileService';
+import { isTauri, startWindowDragging, DetectedAgent, fetchOpencodeProxyGlobal, setOpencodeProxyGlobal } from '../services/fileService';
 import { AgentDropdownMenu } from './AgentDropdownMenu';
 
 /**
@@ -110,6 +110,7 @@ interface TopBarProps {
   onToggleBottom: () => void;
   onOpenSettings: () => void;
   onOpenGitModal?: () => void;
+  onOpenProvidersModal?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -130,8 +131,30 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleBottom,
   onOpenSettings,
   onOpenGitModal,
+  onOpenProvidersModal,
 }) => {
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+  const [proxyEnabled, setProxyEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOpencodeProxyGlobal().then((info) => {
+      if (!cancelled) setProxyEnabled(!!info.enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggleGlobalProxy = async () => {
+    const next = !proxyEnabled;
+    setProxyEnabled(next);
+    const ok = await setOpencodeProxyGlobal(next);
+    if (!ok) {
+      // 回滚 UI 状态
+      setProxyEnabled(!next);
+    }
+  };
   const agentDropdownRef = useRef<HTMLDivElement>(null);
 
   const projectName = workspaceDir
@@ -301,6 +324,44 @@ export const TopBar: React.FC<TopBarProps> = ({
           )}
         </div>
 
+        <div className="h-3.5 w-px bg-[var(--aura-border,rgba(125,125,125,0.25))] mx-1 self-center shrink-0 select-none" />
+
+        {/* Providers Button：独立的供应商管理功能区，与 Git 以 | 划分；右侧附全局 on/off（左右切换）开关 */}
+        <div className="flex items-center gap-1" data-tauri-no-drag>
+          <button
+            type="button"
+            data-tauri-no-drag
+            onClick={onOpenProvidersModal}
+            title="OpenCode Providers (opencode.json 供应商管理)"
+            className="flex items-center gap-1 px-2 py-1 rounded-l-md text-xs font-medium text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-text,#ffffff)] hover:bg-black/5 dark:hover:bg-white/10 border border-transparent hover:border-[var(--aura-border,rgba(125,125,125,0.15))] active:scale-[0.96] transition-all"
+          >
+            <Plug size={12} className="text-[var(--aura-accent,#007acc)]" />
+            <span>Providers</span>
+          </button>
+          <button
+            type="button"
+            data-tauri-no-drag
+            onClick={handleToggleGlobalProxy}
+            role="switch"
+            aria-checked={proxyEnabled}
+            aria-label={proxyEnabled ? '关闭本地代理' : '开启本地代理'}
+            title={
+              proxyEnabled
+                ? '本地代理已启用：点击关闭，opencode.json 不再注入任何 provider'
+                : '本地代理已关闭：点击启用，opencode.json 将恢复代理 provider（按保存的池还原）'
+            }
+            className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 select-none cursor-pointer outline-none"
+            style={{ backgroundColor: proxyEnabled ? 'rgb(16 185 129)' : 'rgb(82 82 82)' }}
+          >
+            <span
+              className="absolute top-[2px] left-[2px] h-3 w-3 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: proxyEnabled ? 'translateX(12px)' : 'translateX(0px)' }}
+            />
+          </button>
+        </div>
+
+        <div className="h-3.5 w-px bg-[var(--aura-border,rgba(125,125,125,0.25))] mx-1 self-center shrink-0 select-none" />
+
         {/* Git Button placed immediately to the right of Terminal (Click opens Git modal) */}
         <button
           type="button"
@@ -312,6 +373,8 @@ export const TopBar: React.FC<TopBarProps> = ({
           <GitBranch size={12} className="text-[var(--aura-accent,#007acc)]" />
           <span>Git</span>
         </button>
+
+        <div className="h-3.5 w-px bg-[var(--aura-border,rgba(125,125,125,0.25))] mx-1 self-center shrink-0 select-none" />
 
         <button
           data-tauri-no-drag
