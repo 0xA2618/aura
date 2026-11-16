@@ -4179,7 +4179,7 @@ pub fn run() {
             let app_menu = tauri::menu::SubmenuBuilder::new(handle, "Aura")
                 .about(Some(tauri::menu::AboutMetadata {
                     name: Some("Aura".into()),
-                    version: Some("1.0.0".into()),
+                    version: Some(env!("CARGO_PKG_VERSION").into()),
                     ..Default::default()
                 }))
                 .separator()
@@ -4219,12 +4219,24 @@ pub fn run() {
                 .text("help_shortcuts", "Keyboard Shortcuts Guide (快捷键一览)")
                 .build()?;
 
+            let info_menu = tauri::menu::SubmenuBuilder::new(handle, "Info")
+                .item(
+                    &tauri::menu::MenuItemBuilder::new(format!("Aura IDE v{}", env!("CARGO_PKG_VERSION")))
+                        .id("info_version")
+                        .enabled(false)
+                        .build(handle)?,
+                )
+                .separator()
+                .text("info_github", "GitHub — github.com/0xA2618/aura")
+                .build()?;
+
             tauri::menu::MenuBuilder::new(handle)
                 .item(&app_menu)
                 .item(&file_menu)
                 .item(&edit_menu)
                 .item(&window_menu)
                 .item(&help_menu)
+                .item(&info_menu)
                 .build()
         })
         .on_menu_event(|app, event| {
@@ -4237,6 +4249,8 @@ pub fn run() {
                 let _ = app.emit("menu:open_folder_requested", ());
             } else if event.id() == &tauri::menu::MenuId::new("help_shortcuts") {
                 let _ = app.emit("menu:help_requested", ());
+            } else if event.id() == &tauri::menu::MenuId::new("info_github") {
+                let _ = tauri_plugin_opener::open_url("https://github.com/0xA2618/aura", None::<&str>);
             }
         })
         .invoke_handler(tauri::generate_handler![
