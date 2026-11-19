@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Bot, Check, Activity, ChevronDown } from "lucide-react";
+import { Bot, Check, Activity, ChevronDown, Copy, Download } from "lucide-react";
 import { AcpMarkdown } from "./AcpMarkdown";
 import { ContextChip } from "./ContextChip";
 import { acpStart, acpSendPrompt, acpSetConfigOption, acpCancel, listenToAcpSession, trackAcpConversation, memorySave } from "../services/fileService";
@@ -360,28 +360,59 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
 
   const atBottomRef = useRef(true);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
 
-  const scrollToEnd = useCallback(() => {
+  const handleCopyMessage = useCallback(async (msgId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMsgId(msgId);
+      setTimeout(() => {
+        setCopiedMsgId((prev) => (prev === msgId ? null : prev));
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+    }
+  }, []);
+
+  const handleDownloadMessage = useCallback((content: string, timestamp: string) => {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeTime = (timestamp || new Date().toISOString()).replace(/[^a-zA-Z0-9_-]/g, '_');
+    a.href = url;
+    a.download = `${agentId || 'agent'}-reply-${safeTime}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [agentId]);
+
+  const scrollToEnd = useCallback((force = false) => {
+    if (!force && !atBottomRef.current) return;
     atBottomRef.current = true;
     setShowJumpBottom(false);
-    const ref = scrollContainerRef.current;
-    if (!ref) return;
-    // 等下一次 paint 后再跳到底，避免 scrollHeight 还是旧值
-    requestAnimationFrame(() => {
+    const doScroll = () => {
       const el = scrollContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
-    // 与此同时，二次同步到下一帧，覆盖大字段恢复（长消息 / 大 segment 补上）
-    setTimeout(() => {
-      const el = scrollContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, 50);
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      }
+    };
+    requestAnimationFrame(doScroll);
+    setTimeout(doScroll, 40);
+    setTimeout(doScroll, 120);
+    setTimeout(doScroll, 300);
   }, []);
 
   // 平滑跳到底部（「到底部」按钮用）
   const jumpToBottom = useCallback(() => {
+    atBottomRef.current = true;
+    setShowJumpBottom(false);
     const el = scrollContainerRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
   }, []);
 
   // 监听消息区滚动：维护 atBottom 标记，控制「到底部」按钮显隐
@@ -393,13 +424,30 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
     setShowJumpBottom(distance > 140);
   }, []);
 
+  // 监听内容尺寸变化（例如 Markdown 异步排版完成、Mermaid SVG 渲染、代码块展开等）
+  // 只要用户在底部，就自动保持贴底，防止长内容出现时卡在中间看不到最下方
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      }
+    });
+    ro.observe(el);
+    for (let i = 0; i < el.children.length; i++) {
+      ro.observe(el.children[i]);
+    }
+    return () => ro.disconnect();
+  }, [messages]);
+
   // 窗口跨显示器移动 / 缩放时内容高度突变：若用户原本就在底部，重新锚定到底部
   useEffect(() => {
     const onResize = () => {
-      // 两帧后再量 scrollHeight，等待布局稳定
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (atBottomRef.current) scrollToEnd();
+          if (atBottomRef.current) scrollToEnd(true);
         });
       });
     };
@@ -416,9 +464,9 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
   useEffect(() => {
     if (isStarted && !startupScrolledRef.current) {
       startupScrolledRef.current = true;
-      requestAnimationFrame(() => scrollToEnd());
-      setTimeout(scrollToEnd, 100);
-      setTimeout(scrollToEnd, 400);
+      requestAnimationFrame(() => scrollToEnd(true));
+      setTimeout(() => scrollToEnd(true), 100);
+      setTimeout(() => scrollToEnd(true), 400);
     }
   }, [isStarted, scrollToEnd]);
 
@@ -1338,11 +1386,11 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
                 )}
               </div>
             ) : msg.role === "assistant" ? (
-              <div className="acp-assistant-bubble max-w-full">
+              <div className="acp-assistant-bubble max-w-full relative group">
                 <AcpMarkdown content={msg.content} />
-                {msg.elapsedMs != null && (
-                  <div className="flex items-center gap-2 mt-1.5 px-1 text-[0.72em] font-mono text-[var(--aura-text-muted,#858585)] select-none">
-                    <span>Took {formatElapsed(msg.elapsedMs)}</span>
+                <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-[var(--aura-border,#3a3a3a)]/30 text-[0.72em] font-mono text-[var(--aura-text-muted,#858585)] select-none">
+                  <div className="flex items-center gap-2 px-1">
+                    {msg.elapsedMs != null && <span>Took {formatElapsed(msg.elapsedMs)}</span>}
                     {msg.tokPerSec != null && (
                       <>
                         <span className="opacity-50">·</span>
@@ -1350,7 +1398,36 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
                       </>
                     )}
                   </div>
-                )}
+                  <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyMessage(msg.id, msg.content)}
+                      title="复制回复全文 (Copy full reply)"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--aura-bg-elevated,#2d2d30)] hover:text-[var(--aura-text,#ebeef3)] transition-colors cursor-pointer"
+                    >
+                      {copiedMsgId === msg.id ? (
+                        <>
+                          <Check size={11} className="text-[#34d399]" />
+                          <span className="text-[#34d399]">已复制</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={11} />
+                          <span>复制</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadMessage(msg.content, msg.timestamp)}
+                      title="下载为 Markdown 文件 (Download as .md)"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--aura-bg-elevated,#2d2d30)] hover:text-[var(--aura-text,#ebeef3)] transition-colors cursor-pointer"
+                    >
+                      <Download size={11} />
+                      <span>下载</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="p-2 text-[0.8em] text-[var(--aura-text-muted)] border-l-2 border-[var(--aura-border,#3a3a3a)] ml-1 pl-3">
@@ -1576,7 +1653,7 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
             </button>
           );
         })()}
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-10 shrink-0 pointer-events-none" />
       </div>
 
       {/* 跳到底部悬浮按钮 */}
