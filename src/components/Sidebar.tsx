@@ -369,9 +369,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleProjectClick = (group: { projectPath: string; projectName: string; isCurrent: boolean }) => {
     toggleProjectCollapse(group.projectPath);
-    if (group.projectPath && group.projectPath !== workspaceDir && onSelectProject) {
-      onSelectProject(group.projectPath);
-    }
   };
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -380,6 +377,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     x: number;
     y: number;
     session: AgentSessionItem;
+  } | null>(null);
+  const [projectContextMenu, setProjectContextMenu] = useState<{
+    x: number;
+    y: number;
+    group: { projectPath: string; projectName: string; isCurrent: boolean };
   } | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<AgentSessionItem | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<{ projectPath: string; projectName: string } | null>(null);
@@ -617,11 +619,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const handleCloseSettingsMenu = () => {
       setOpenSettingsPluginId(null);
       setSessionContextMenu(null);
+      setProjectContextMenu(null);
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setContextMenu(null);
         setSessionContextMenu(null);
+        setProjectContextMenu(null);
         setActionModal(null);
         setOpenWithModalItem(null);
         setInlineRenameItem(null);
@@ -1451,13 +1455,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="mb-1">
                     <div
                       onClick={() => handleProjectClick(group)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setProjectContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          group,
+                        });
+                      }}
                       style={{ fontSize: `${fontSize}px` }}
                       className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer select-none transition-colors group/proj ${
                         group.isCurrent
                           ? 'bg-[var(--aura-accent,#007acc)]/10 text-[var(--aura-accent,#007acc)] font-medium'
                           : 'text-[var(--aura-text-muted)] hover:text-[var(--aura-text)] hover:bg-black/5 dark:hover:bg-white/5'
                       }`}
-                      title={`点击折叠会话并切换到项目目录: ${group.projectPath || group.projectName}`}
+                      title={`点击展开/折叠会话列表，右键弹出选项: ${group.projectPath || group.projectName}`}
                     >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         <span
@@ -1494,17 +1507,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="text-[10px] font-mono text-[var(--aura-text-muted)] opacity-70 group-hover/proj:opacity-100">
                           ({group.sessions.length})
                         </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProjectToDelete(group);
-                          }}
-                          title="Remove project from session list (Does not delete database records)"
-                          className="opacity-0 group-hover/proj:opacity-100 p-0.5 rounded hover:bg-red-500/15 hover:text-red-400 text-[var(--aura-text-muted)] transition-all cursor-pointer"
-                        >
-                          <Trash2 size={11} />
-                        </button>
                       </div>
                     </div>
 
@@ -1596,18 +1598,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   {session.title}
                                 </span>
                               </div>
-
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSessionToDelete(session);
-                                }}
-                                title="Delete session"
-                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/15 hover:text-red-400 text-[var(--aura-text-muted)] transition-all cursor-pointer flex-shrink-0"
-                              >
-                                <X size={12} />
-                              </button>
                             </div>
                           )
                         ))
@@ -2627,6 +2617,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="flex items-center justify-between px-3 py-1.5 hover:bg-red-500/20 hover:text-red-400 cursor-pointer transition-colors text-red-400"
             >
               <span>Delete</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Item Right-Click Context Menu */}
+      {projectContextMenu && (
+        <div
+          style={{
+            top: `${projectContextMenu.y}px`,
+            left: `${projectContextMenu.x}px`,
+            backgroundColor: 'var(--aura-card-bg, #252526)',
+            borderColor: 'var(--aura-border, #454545)',
+            color: 'var(--aura-text, #cccccc)',
+          }}
+          className="fixed z-[160] w-32 border rounded-lg shadow-2xl py-1 text-xs select-none animate-in fade-in duration-75"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="py-0.5">
+            <div
+              onClick={() => {
+                const g = projectContextMenu.group;
+                setProjectContextMenu(null);
+                const dir = g.projectPath || g.projectName;
+                navigator.clipboard?.writeText(dir).catch(() => {});
+              }}
+              className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--aura-accent,#007acc)]/20 hover:text-[var(--aura-accent,#007acc)] cursor-pointer transition-colors"
+              title="复制项目路径 (Copy Path)"
+            >
+              <span>Copy Path</span>
+            </div>
+            <div
+              onClick={() => {
+                const g = projectContextMenu.group;
+                setProjectContextMenu(null);
+                setProjectToDelete(g);
+              }}
+              className="flex items-center justify-between px-3 py-1.5 hover:bg-red-500/20 hover:text-red-400 cursor-pointer transition-colors text-red-400"
+              title="从列表中隐藏项目名称（不删除底层会话记录）"
+            >
+              <span>Del</span>
             </div>
           </div>
         </div>

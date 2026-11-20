@@ -224,9 +224,17 @@ export const TopBar: React.FC<TopBarProps> = ({
             )}
           </div>
         ) : (
-          <span data-tauri-drag-region className="text-xs font-mono text-[var(--aura-text-muted,#555555)] cursor-default select-none">
-            Aura IDE
-          </span>
+          <button
+            type="button"
+            data-tauri-no-drag
+            onClick={onChangeWorkspaceDir}
+            title="点击打开/切换工作区目录 (Switch / Open Project Directory)"
+            className="flex items-center gap-1.5 px-2 py-1 -ml-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 active:scale-[0.98] cursor-pointer select-none font-sans group transition-all"
+          >
+            <span className="text-xs font-mono text-[var(--aura-text-muted,#888888)] group-hover:text-[var(--aura-accent,#007acc)] cursor-pointer select-none">
+              Aura IDE (点击切换项目)
+            </span>
+          </button>
         )}
       </div>
 
