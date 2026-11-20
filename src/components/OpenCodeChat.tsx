@@ -94,9 +94,34 @@ export const OpenCodeChat: React.FC<OpenCodeChatProps> = ({ workspaceDir }) => {
   const [selectedSkillIdx, setSelectedSkillIdx] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
+  const [showJumpBottom, setShowJumpBottom] = useState(false);
+
+  const updateScrollState = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atBottomRef.current = distance < 40;
+    setShowJumpBottom(distance > 60);
+  };
+
+  const jumpToBottom = () => {
+    atBottomRef.current = true;
+    setShowJumpBottom(false);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleMessagesScroll = () => {
+    updateScrollState();
+  };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (atBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      updateScrollState();
+    }
   }, [messages]);
 
   const handleInputChange = (val: string) => {
@@ -178,72 +203,93 @@ export const OpenCodeChat: React.FC<OpenCodeChatProps> = ({ workspaceDir }) => {
   return (
     <div className="flex flex-col h-full w-full bg-[#1e1e1e]">
       {/* 1. Messages Scroll Area */}
-      <div
-        onMouseUp={handleMouseUpSelection}
-        className="flex-1 overflow-y-auto p-4 space-y-4 select-text relative"
-      >
-        {copiedId === 'selection' && (
-          <div className="sticky top-2 left-1/2 -translate-x-1/2 z-40 bg-[#007acc] text-white text-[11px] px-3 py-1 rounded-full shadow-lg font-mono flex items-center gap-1.5 w-fit mx-auto animate-in fade-in">
-            <Check size={12} />
-            <span>选中文本已自动复制到剪贴板</span>
-          </div>
-        )}
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex flex-col text-xs leading-relaxed max-w-[88%] ${
-              msg.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
-            }`}
-          >
-            <div className="flex items-center gap-1.5 mb-1 text-[#858585]">
-              <span className="font-semibold text-[#cccccc] font-sans">
-                {msg.role === 'user' ? 'You' : 'OpenCode'}
-              </span>
-              <span className="text-[10px] text-[#666666] font-mono">{msg.timestamp}</span>
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleMessagesScroll}
+          onMouseUp={handleMouseUpSelection}
+          className="h-full overflow-y-auto p-4 space-y-4 select-text relative"
+        >
+          {copiedId === 'selection' && (
+            <div className="sticky top-2 left-1/2 -translate-x-1/2 z-40 bg-[#007acc] text-white text-[11px] px-3 py-1 rounded-full shadow-lg font-mono flex items-center gap-1.5 w-fit mx-auto animate-in fade-in">
+              <Check size={12} />
+              <span>选中文本已自动复制到剪贴板</span>
             </div>
+          )}
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex flex-col text-xs leading-relaxed max-w-[88%] ${
+                msg.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 mb-1 text-[#858585]">
+                <span className="font-semibold text-[#cccccc] font-sans">
+                  {msg.role === 'user' ? 'You' : 'OpenCode'}
+                </span>
+                <span className="text-[10px] text-[#666666] font-mono">{msg.timestamp}</span>
+              </div>
 
-            {msg.thinking && (
-              <div className="w-full mb-2 bg-[#252526]/80 backdrop-blur-xs rounded-lg border border-[#333333] overflow-hidden">
-                <button
-                  onClick={() => toggleThinking(msg.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[#999999] hover:text-white w-full text-left transition-colors"
-                >
-                  {showThinking[msg.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  <Sparkles size={12} className="text-amber-400" />
-                  <span className="font-mono">推理过程与上下文分析 (已收纳)</span>
-                </button>
-                {showThinking[msg.id] && (
-                  <div className="px-3 py-2 text-[11.5px] text-[#888888] bg-[#1a1a1a] border-t border-[#2a2a2a] leading-normal font-mono">
-                    {msg.thinking}
+              {msg.thinking && (
+                <div className="w-full mb-2 bg-[#252526]/80 backdrop-blur-xs rounded-lg border border-[#333333] overflow-hidden">
+                  <button
+                    onClick={() => toggleThinking(msg.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-[#999999] hover:text-white w-full text-left transition-colors"
+                  >
+                    {showThinking[msg.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    <Sparkles size={12} className="text-amber-400" />
+                    <span className="font-mono">推理过程与上下文分析 (已收纳)</span>
+                  </button>
+                  {showThinking[msg.id] && (
+                    <div className="px-3 py-2 text-[11.5px] text-[#888888] bg-[#1a1a1a] border-t border-[#2a2a2a] leading-normal font-mono">
+                      {msg.thinking}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div
+                className={`p-3.5 rounded-2xl border shadow-sm break-words ${
+                  msg.role === 'user'
+                    ? 'bg-[#007acc] text-white border-[#1188dd] rounded-br-xs'
+                    : 'bg-[#252526] text-[#e0e0e0] border-[#37373d] rounded-bl-xs'
+                }`}
+              >
+                <div className="whitespace-pre-wrap leading-relaxed font-sans text-[12.5px]">{msg.content}</div>
+
+                {msg.role === 'assistant' && (
+                  <div className="mt-2.5 pt-2 border-t border-[#333333] flex justify-end">
+                    <button
+                      onClick={() => copyCode(msg.content, msg.id)}
+                      className="flex items-center gap-1.5 text-[11px] text-[#858585] hover:text-white px-2 py-0.5 rounded hover:bg-[#333333] transition-colors"
+                    >
+                      {copiedId === msg.id ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                      <span>{copiedId === msg.id ? '已复制' : '复制内容'}</span>
+                    </button>
                   </div>
                 )}
               </div>
-            )}
-
-            <div
-              className={`p-3.5 rounded-2xl border shadow-sm break-words ${
-                msg.role === 'user'
-                  ? 'bg-[#007acc] text-white border-[#1188dd] rounded-br-xs'
-                  : 'bg-[#252526] text-[#e0e0e0] border-[#37373d] rounded-bl-xs'
-              }`}
-            >
-              <div className="whitespace-pre-wrap leading-relaxed font-sans text-[12.5px]">{msg.content}</div>
-
-              {msg.role === 'assistant' && (
-                <div className="mt-2.5 pt-2 border-t border-[#333333] flex justify-end">
-                  <button
-                    onClick={() => copyCode(msg.content, msg.id)}
-                    className="flex items-center gap-1.5 text-[11px] text-[#858585] hover:text-white px-2 py-0.5 rounded hover:bg-[#333333] transition-colors"
-                  >
-                    {copiedId === msg.id ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-                    <span>{copiedId === msg.id ? '已复制' : '复制内容'}</span>
-                  </button>
-                </div>
-              )}
             </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* 跳到底部悬浮按钮 */}
+        {showJumpBottom && (
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            title="跳到对话最底部 (Scroll to bottom)"
+            aria-label="跳到对话最底部"
+            className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer select-none text-[12px] font-medium group bg-[#252526] border-[#454545] text-[#e0e0e0]"
+            style={{
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
+            }}
+          >
+            <ChevronDown size={14} strokeWidth={2.4} className="text-[#007acc] group-hover:translate-y-0.5 transition-transform" />
+            <span>回到底部</span>
+          </button>
+        )}
       </div>
 
       <div className="p-3 bg-[#1e1e1e] relative">

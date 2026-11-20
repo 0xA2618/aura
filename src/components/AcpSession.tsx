@@ -404,6 +404,16 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
     setTimeout(doScroll, 300);
   }, []);
 
+  // 统一滚动状态更新逻辑：同步 atBottom 与「到底部」按钮显隐
+  const updateScrollState = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isAtBottom = distance < 40;
+    atBottomRef.current = isAtBottom;
+    setShowJumpBottom(distance > 60);
+  }, []);
+
   // 平滑跳到底部（「到底部」按钮用）
   const jumpToBottom = useCallback(() => {
     atBottomRef.current = true;
@@ -417,15 +427,11 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
 
   // 监听消息区滚动：维护 atBottom 标记，控制「到底部」按钮显隐
   const handleMessagesScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atBottomRef.current = distance < 80;
-    setShowJumpBottom(distance > 140);
-  }, []);
+    updateScrollState();
+  }, [updateScrollState]);
 
   // 监听内容尺寸变化（例如 Markdown 异步排版完成、Mermaid SVG 渲染、代码块展开等）
-  // 只要用户在底部，就自动保持贴底，防止长内容出现时卡在中间看不到最下方
+  // 只要用户在底部，就自动保持贴底；若不在底部则更新「到底部」按钮显隐
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -433,6 +439,8 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
       if (atBottomRef.current) {
         el.scrollTop = el.scrollHeight;
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      } else {
+        updateScrollState();
       }
     });
     ro.observe(el);
@@ -440,24 +448,32 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
       ro.observe(el.children[i]);
     }
     return () => ro.disconnect();
-  }, [messages]);
+  }, [messages, updateScrollState]);
 
   // 窗口跨显示器移动 / 缩放时内容高度突变：若用户原本就在底部，重新锚定到底部
   useEffect(() => {
     const onResize = () => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (atBottomRef.current) scrollToEnd(true);
+          if (atBottomRef.current) {
+            scrollToEnd(true);
+          } else {
+            updateScrollState();
+          }
         });
       });
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [scrollToEnd]);
+  }, [scrollToEnd, updateScrollState]);
 
   useEffect(() => {
-    scrollToEnd();
-  }, [messages, scrollToEnd]);
+    if (atBottomRef.current) {
+      scrollToEnd();
+    } else {
+      updateScrollState();
+    }
+  }, [messages, scrollToEnd, updateScrollState]);
 
   // 会话恢复一次性跳到底 — 处理长 history replay 完成后才显示
   const startupScrolledRef = useRef(false);
@@ -1661,16 +1677,18 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
         <button
           type="button"
           onClick={jumpToBottom}
-          title="跳到对话最底部"
+          title="跳到对话最底部 (Scroll to bottom)"
           aria-label="跳到对话最底部"
-          className="absolute bottom-3 right-4 z-20 flex items-center justify-center w-8 h-8 rounded-full border shadow-lg backdrop-blur-sm transition-all duration-150 hover:scale-110 active:scale-95"
+          className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer select-none text-[12px] font-medium group"
           style={{
             backgroundColor: 'var(--aura-card-bg, #252526)',
             borderColor: 'var(--aura-border, #454545)',
-            color: 'var(--aura-accent, #007acc)',
+            color: 'var(--aura-text, #e0e0e0)',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
           }}
         >
-          <ChevronDown size={16} strokeWidth={2.4} />
+          <ChevronDown size={14} strokeWidth={2.4} className="text-[var(--aura-accent,#007acc)] group-hover:translate-y-0.5 transition-transform" />
+          <span>回到底部</span>
         </button>
       )}
       </div>
