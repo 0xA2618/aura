@@ -1,6 +1,6 @@
 [package]
 name = "aura"
-version = "1.2.8"
+version = "1.2.9"
 description = "Aura IDE - Minimalist macOS Desktop Code Workspace"
 authors = ["Yang"]
 edition = "2021"
