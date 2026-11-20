@@ -33,6 +33,7 @@ import {
   fetchCommitFileDiff,
   fetchGitHeadContent,
   watchWorkspaceFS,
+  openInFinder,
   isTauri,
   exitApp,
   DetectedAgent,
@@ -492,7 +493,7 @@ export function App() {
     return localStorage.getItem('aura:theme') || 'vs-dark';
   });
   const [workspaceDir, setWorkspaceDir] = useState<string>(() => {
-    return localStorage.getItem('aura:workspaceDir') || '';
+    return localStorage.getItem('aura:workspaceDir') || (!isTauri ? '/Users/Yang/workspace/local/agy-setting' : '');
   });
   const workspaceDirRef = useRef<string>(workspaceDir);
   workspaceDirRef.current = workspaceDir;
@@ -1098,11 +1099,31 @@ export function App() {
   };
 
   const handleOpenFileByPath = async (filePath: string, forceNormalEditor?: boolean) => {
-    let resolvedPath = filePath;
-    if (workspaceDir && !filePath.startsWith('/') && !filePath.startsWith('\\')) {
-      resolvedPath = `${workspaceDir}/${filePath}`;
+    // 1. 剥离行号锚点（如 #L1-L300）
+    const cleanPath = filePath.split('#')[0].trim();
+    if (!cleanPath) return;
+
+    let resolvedPath = cleanPath;
+    if (workspaceDir && !cleanPath.startsWith('/') && !cleanPath.startsWith('\\')) {
+      resolvedPath = `${workspaceDir}/${cleanPath}`;
     }
-    const fileName = resolvedPath.split('/').pop() || resolvedPath;
+
+    // 2. 若在 Tauri 环境且是目录或无文件扩展名，在访达中定位并打开
+    if (isTauri) {
+      const isLikelyDir = !cleanPath.split('/').pop()?.includes('.') || cleanPath.endsWith('/');
+      if (isLikelyDir) {
+        try {
+          const opened = await openInFinder(resolvedPath);
+          if (opened) {
+            showToast(`已在访达中显示: ${resolvedPath.split('/').filter(Boolean).pop()}`);
+            return;
+          }
+        } catch {}
+      }
+    }
+
+    // 3. 作为文件在 2 号窗口（代码编辑器）中打开
+    const fileName = resolvedPath.split('/').filter(Boolean).pop() || resolvedPath;
     await handleSelectFile(
       {
         name: fileName,
@@ -1112,6 +1133,7 @@ export function App() {
       forceNormalEditor ? 'editor' : undefined,
       forceNormalEditor
     );
+    showToast(`已在编辑器中打开: ${fileName}`);
   };
 
   // Agent 输出里的文件路径（AcpMarkdown 里 <a href="./foo.ts">） — 在编辑器里打开

@@ -343,6 +343,18 @@ export async function saveFileContent(filePath: string, content: string): Promis
   return true;
 }
 
+export async function openInFinder(targetPath: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      return await invoke<boolean>('fs_open_in_finder', { targetPath });
+    } catch (e) {
+      console.error('[Rust fs_open_in_finder error]', e);
+      return false;
+    }
+  }
+  return false;
+}
+
 export async function promptOpenDirectory(currentPath?: string): Promise<string | null> {
   if (isTauri) {
     try {
@@ -355,6 +367,13 @@ export async function promptOpenDirectory(currentPath?: string): Promise<string 
   } else if (typeof window !== 'undefined' && (window as any).electronAPI) {
     const selected = await (window as any).electronAPI.openDirectoryDialog(currentPath);
     return selected || null;
+  }
+  if (typeof window !== 'undefined') {
+    const res = window.prompt(
+      '请输入工作区目录绝对路径 (切换项目):',
+      currentPath || '/Users/Yang/workspace/local/agy-setting'
+    );
+    return res ? res.trim() : null;
   }
   return null;
 }
@@ -1113,7 +1132,38 @@ export async function fetchProjectAgentSessions(workspaceDir: string): Promise<P
       return [];
     }
   }
-  return [];
+  // Browser preview mode fallback: mock sessions across projects for development & testing
+  const curWs = workspaceDir || '/Users/Yang/workspace/local/agy-setting';
+  const curName = curWs.split('/').filter(Boolean).pop() || 'agy-setting';
+  return [
+    {
+      id: 'mock-session-1',
+      title: 'prod-feature-auth-setup',
+      agent_name: 'Antigravity (agy)',
+      agent_command: 'agy',
+      agent_id: 'agy',
+      project_path: curWs,
+      project_name: curName,
+    },
+    {
+      id: 'mock-session-2',
+      title: 'prod-fix-login-flow',
+      agent_name: 'OpenCode',
+      agent_command: 'opencode',
+      agent_id: 'opencode',
+      project_path: curWs,
+      project_name: curName,
+    },
+    {
+      id: 'mock-session-3',
+      title: 'prod-database-migration',
+      agent_name: 'Antigravity (agy)',
+      agent_command: 'agy',
+      agent_id: 'agy',
+      project_path: '/Users/Yang/workspace/github/aura',
+      project_name: 'aura',
+    },
+  ];
 }
 
 export async function updateProjectAgentSessionTitle(workspaceDir: string, sessionId: string, newTitle: string): Promise<boolean> {

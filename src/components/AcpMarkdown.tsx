@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useRef } from "react";
 import { marked } from "marked";
 import mermaid from "mermaid";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { isTauri } from "../services/fileService";
 
 interface AcpMarkdownProps {
   content: string;
@@ -247,32 +248,47 @@ export const AcpMarkdown: React.FC<AcpMarkdownProps> = ({ content }) => {
   };
 
   const handleLinkClick = async (e: React.MouseEvent<HTMLDivElement>) => {
+    // 1. 如果用户按住 Ctrl（且未按 Cmd），完全保持 macOS 原生行为（弹出右键复制/粘贴菜单），不予拦截
+    if (e.ctrlKey && !e.metaKey) {
+      return;
+    }
+
     const anchor = (e.target as HTMLElement).closest('a');
     if (!anchor) return;
     const href = anchor.getAttribute('href') || '';
     if (!href) return;
 
-    e.preventDefault();
-    e.stopPropagation();
-
-    // 外部链接（http/https/mailto） — 外部浏览器打开，需 Cmd/Ctrl 点击触发
-    if (/^(https?|mailto):\/\//i.test(href)) {
-      if (e.metaKey || e.ctrlKey) {
-        try { await openUrl(href); } catch (err) {
-          console.warn('[AcpMarkdown] openUrl failed', err);
-          window.open(href, '_blank', 'noopener,noreferrer');
-        }
-      }
+    // 2. 用户明确要求：“我需要的是使用cmd点击打开 ctrl点击保持不变”
+    // 如果没有按住 Cmd 键，不拦截点击，直接 return
+    if (!e.metaKey) {
       return;
     }
 
-    // 本地路径（file:// / 绝对 / 相对 / 带常见代码扩展名）— 本应用内打开
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 3. 外部链接（http/https/mailto） — 浏览器打开
+    if (/^(https?|mailto):\/\//i.test(href)) {
+      if (isTauri) {
+        try {
+          await openUrl(href);
+          return;
+        } catch (err) {
+          console.warn('[AcpMarkdown] openUrl failed, falling back to window.open', err);
+        }
+      }
+      // Web 模式或降级：同步直接触发 window.open（避免在异步 Promise 中被浏览器安全策略静默阻止弹窗）
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // 4. 本地路径（file:// / 绝对 / 相对 / 带常见代码扩展名）— 本应用内打开
     if (
       href.startsWith('file://') ||
       href.startsWith('./') ||
       href.startsWith('../') ||
       href.startsWith('/') ||
-      /\.(ts|tsx|js|jsx|mjs|json|md|py|rs|go|java|c|cc|cpp|cxx|h|hpp|css|scss|html?|sh|zsh|yaml|toml|yml|png|jpg|jpeg|gif|svg|pdf|ino|swift|kt|rb|php|vue|svelte|lock|ini|gradle|env)$/i.test(href)
+      /\.(ts|tsx|js|jsx|mjs|json|md|py|rs|go|java|c|cc|cpp|cxx|h|hpp|css|scss|html?|sh|zsh|yaml|toml|yml|png|jpg|jpeg|gif|svg|pdf|ino|swift|kt|rb|php|vue|svelte|lock|ini|gradle|env)/i.test(href)
     ) {
       const clean = href.startsWith('file://') ? href.replace(/^file:\/\//, '') : href;
       window.dispatchEvent(new CustomEvent('aura:open-file-path', { detail: clean }));
@@ -281,7 +297,9 @@ export const AcpMarkdown: React.FC<AcpMarkdownProps> = ({ content }) => {
   };
 
   const { html, mermaidBlocks } = useMemo(() => {
-    const safe = sanitizeHtml(String(content ?? ""));
+    let safe = sanitizeHtml(String(content ?? ""));
+    // 自动将对话中裸露的 file:///... 转换为可点击的 Markdown 链接
+    safe = safe.replace(/(?<!\]\()(file:\/\/[^\s<>'"]+)/g, '[$1]($1)');
 
     // 拆出 ```mermaid … ``` 块，分别渲染成占位 div + 记下源码，事后逐一 mermaid.render
     const fence = /```mermaid\s*([\s\S]*?)```/g;
