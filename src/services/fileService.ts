@@ -328,6 +328,38 @@ export async function fetchFileContent(filePath: string): Promise<string> {
   return '';
 }
 
+export async function fetchConversationPrompts(sessionId: string): Promise<{ id: string; summary: string; fullText: string }[]> {
+  try {
+    const agyPath = `/Users/Yang/.gemini/antigravity-cli/brain/${sessionId}/.system_generated/logs/transcript.jsonl`;
+    const content = await fetchFileContent(agyPath);
+    if (content) {
+      const lines = content.split('\n');
+      const list: { id: string; summary: string; fullText: string }[] = [];
+      let idx = 0;
+      for (const line of lines) {
+        if (!line.includes('"type":"USER_INPUT"')) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.content) {
+            const m = parsed.content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+            const full = (m ? m[1] : parsed.content).trim();
+            const firstLine = full.split('\n')[0].trim();
+            list.push({
+              id: `p-${idx++}`,
+              fullText: full,
+              summary: firstLine.length > 28 ? firstLine.slice(0, 28) + '...' : firstLine,
+            });
+          }
+        } catch (e) {}
+      }
+      if (list.length > 0) return list;
+    }
+  } catch (e) {
+    console.error('[fetchConversationPrompts error]', e);
+  }
+  return [];
+}
+
 export async function saveFileContent(filePath: string, content: string): Promise<boolean> {
   if (isTauri) {
     try {

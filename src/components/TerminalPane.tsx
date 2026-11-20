@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -13,7 +13,8 @@ import {
   resizeTerminalPTY,
   killTerminalPTY,
   onTerminalData,
-  onTerminalExit
+  onTerminalExit,
+  fetchConversationPrompts
 } from '../services/fileService';
 
 interface TerminalPaneProps {
@@ -43,15 +44,64 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     const xtermInstance = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const [showScrollBottom, setShowScrollBottom] = useState(false);
+    const [userTurns, setUserTurns] = useState<{ id: string; summary: string; fullText: string }[]>([]);
+    const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+    const [isOutlineHovered, setIsOutlineHovered] = useState(false);
+
+    // 解析当前终端会话关联的 conversation id
+    const sessionId = useMemo(() => {
+      if (mode && mode.includes('--conversation')) {
+        const parts = mode.split('--conversation');
+        if (parts[1]) return parts[1].trim().split(' ')[0].replace(/['"]/g, '');
+      }
+      if (mode && mode.includes('-c ')) {
+        const parts = mode.split('-c ');
+        if (parts[1]) return parts[1].trim().split(' ')[0].replace(/['"]/g, '');
+      }
+      if (/^[0-9a-f-]{36}$/i.test(id)) return id;
+      return null;
+    }, [id, mode]);
+
+    useEffect(() => {
+      if (!sessionId) {
+        setUserTurns([]);
+        return;
+      }
+      fetchConversationPrompts(sessionId).then((turns) => {
+        setUserTurns(turns);
+        if (turns.length > 0) {
+          setActiveTurnId(turns[turns.length - 1].id);
+        }
+      });
+    }, [sessionId]);
+
+    const handleJumpToTurn = useCallback((turn: { id: string; summary: string; fullText: string }) => {
+      setActiveTurnId(turn.id);
+      const term = xtermInstance.current;
+      if (!term || !term.buffer || !term.buffer.active) return;
+      const targetText = turn.summary.replace(/\.\.\.$/, '').trim();
+      const buf = term.buffer.active;
+      for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        if (line && line.translateToString().includes(targetText.slice(0, 8))) {
+          term.scrollToLine(Math.max(0, i - 2));
+          break;
+        }
+      }
+    }, []);
 
     const handleScrollToBottom = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       if (xtermInstance.current) {
         xtermInstance.current.scrollToBottom();
-        setShowScrollBottom(false);
-        xtermInstance.current.focus();
       }
+      const vp = terminalRef.current?.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (vp) {
+        vp.scrollTop = vp.scrollHeight;
+      }
+      setShowScrollBottom(false);
+      xtermInstance.current?.focus();
     }, []);
 
     const safeFit = useCallback(() => {
@@ -168,9 +218,15 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     fitAddonRef.current = fitAddon;
 
     const checkScrollBottom = () => {
+      const vp = terminalRef.current?.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (vp && vp.scrollHeight > vp.clientHeight) {
+        const dist = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
+        setShowScrollBottom(dist > 15);
+        return;
+      }
       if (!term || !term.buffer || !term.buffer.active) return;
       const buf = term.buffer.active;
-      const atBottom = buf.viewportY >= buf.baseY;
+      const atBottom = buf.viewportY >= buf.baseY - 1;
       setShowScrollBottom(!atBottom);
     };
 
@@ -183,6 +239,24 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     });
 
     const termEl = terminalRef.current;
+    let vpCleanup: (() => void) | null = null;
+    if (termEl) {
+      const onWheel = () => {
+        requestAnimationFrame(checkScrollBottom);
+      };
+      termEl.addEventListener('wheel', onWheel, { passive: true });
+      const timer = setTimeout(() => {
+        const vp = termEl.querySelector('.xterm-viewport') as HTMLElement | null;
+        if (vp) {
+          const onVpScroll = () => checkScrollBottom();
+          vp.addEventListener('scroll', onVpScroll, { passive: true });
+          vpCleanup = () => {
+            vp.removeEventListener('scroll', onVpScroll);
+            termEl.removeEventListener('wheel', onWheel);
+          };
+        }
+      }, 150);
+    }
 
     // ---- xterm.js 5.5/6.0.0 bug workaround (#6144, fixed by PR #6200 in 7.0.0) ----
     // macOS 中文输入法直接上屏的全角符号（？！，。（）等）走 beforeinput → input → keydown
@@ -302,6 +376,7 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
         window.removeEventListener('resize', handleResize);
         scrollDisposer.dispose();
         writeParsedDisposer.dispose();
+        if (vpCleanup) (vpCleanup as () => void)();
         if (termEl) {
           termEl.removeEventListener('dragenter', handleNativeDragOver, true);
           termEl.removeEventListener('dragover', handleNativeDragOver, true);
@@ -577,17 +652,86 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
             onClick={handleScrollToBottom}
             title="跳到终端最底部 (Scroll to bottom)"
             aria-label="跳到终端最底部"
-            className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer select-none text-[12px] font-medium group pointer-events-auto"
+            className="absolute bottom-4 right-5 z-40 flex items-center justify-center w-9 h-9 rounded-full border shadow-2xl backdrop-blur-md transition-all duration-150 hover:scale-110 active:scale-95 cursor-pointer select-none group pointer-events-auto"
             style={{
               backgroundColor: 'var(--aura-card-bg, #252526)',
-              borderColor: 'var(--aura-border, #454545)',
-              color: 'var(--aura-text, #e0e0e0)',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
+              borderColor: 'var(--aura-accent, #007acc)',
+              color: 'var(--aura-accent, #007acc)',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
             }}
           >
-            <ChevronDown size={14} strokeWidth={2.4} className="text-[var(--aura-accent,#007acc)] group-hover:translate-y-0.5 transition-transform" />
-            <span>回到底部</span>
+            <ChevronDown size={18} strokeWidth={2.5} className="group-hover:translate-y-0.5 transition-transform" />
           </button>
+        )}
+
+        {/* 右侧会话记录大纲导航：始终垂直居中在右侧，未 hover 显示灰色短横线列，hover 展开提问摘要卡片，去除滚动条 */}
+        {userTurns.length > 0 && (
+          <div
+            onMouseEnter={() => setIsOutlineHovered(true)}
+            onMouseLeave={() => setIsOutlineHovered(false)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex items-center"
+          >
+            {!isOutlineHovered ? (
+              /* 图 1：鼠标未 hover 时只展示一列小短横线，支持滚轮滚动且隐藏滚动条 */
+              <div className="flex flex-col items-end gap-2.5 py-1.5 px-1 cursor-pointer select-none max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {userTurns.map((turn) => {
+                  const isActive = activeTurnId === turn.id;
+                  return (
+                    <div
+                      key={turn.id}
+                      onClick={() => handleJumpToTurn(turn)}
+                      title={turn.fullText}
+                      className="flex items-center justify-end h-3"
+                    >
+                      <span
+                        className={`rounded-full transition-all duration-200 ${
+                          isActive
+                            ? 'w-4 h-[2.5px] bg-[#3b82f6] shadow-sm'
+                            : 'w-3 h-[2px] bg-[#888888]/50 hover:bg-[#aaaaaa] hover:w-3.5'
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* 图 2：鼠标 hover 时直接显示圆角阴影卡片，无缩放过渡动画 */
+              <div
+                className="w-64 max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-2xl border shadow-2xl p-2.5 flex flex-col gap-0.5 select-none font-sans backdrop-blur-md"
+                style={{
+                  backgroundColor: 'var(--aura-card-bg, #252526)',
+                  borderColor: 'var(--aura-border, #454545)',
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45)',
+                }}
+              >
+                {userTurns.map((turn) => {
+                  const isActive = activeTurnId === turn.id;
+                  return (
+                    <div
+                      key={turn.id}
+                      onClick={() => handleJumpToTurn(turn)}
+                      className={`flex items-center justify-between gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                        isActive
+                          ? 'text-[#3b82f6] font-medium bg-[#3b82f6]/15'
+                          : 'text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-text,#e0e0e0)] hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="truncate flex-1" title={turn.fullText}>
+                        {turn.summary}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-full transition-all duration-150 ${
+                          isActive
+                            ? 'w-4 h-[2.5px] bg-[#3b82f6]'
+                            : 'w-3 h-[2px] bg-[#888888]/50'
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
     );

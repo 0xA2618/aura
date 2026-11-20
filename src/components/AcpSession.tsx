@@ -361,6 +361,28 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
   const atBottomRef = useRef(true);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const [isOutlineHovered, setIsOutlineHovered] = useState(false);
+
+  const userTurns = useMemo(() => {
+    return messages
+      .filter((m) => m.role === 'user' && m.content?.trim())
+      .map((m) => {
+        const full = m.content.trim();
+        const firstLine = full.split('\n')[0].trim();
+        return {
+          id: m.id,
+          fullText: full,
+          summary: firstLine.length > 28 ? firstLine.slice(0, 28) + '...' : firstLine,
+        };
+      });
+  }, [messages]);
+
+  useEffect(() => {
+    if (userTurns.length > 0) {
+      setActiveTurnId((prev) => prev || userTurns[userTurns.length - 1].id);
+    }
+  }, [userTurns]);
 
   const handleCopyMessage = useCallback(async (msgId: string, content: string) => {
     try {
@@ -404,7 +426,7 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
     setTimeout(doScroll, 300);
   }, []);
 
-  // 统一滚动状态更新逻辑：同步 atBottom 与「到底部」按钮显隐
+  // 统一滚动状态更新逻辑：同步 atBottom 与「到底部」按钮显隐，并计算当前视口中浏览的 turn
   const updateScrollState = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -412,6 +434,33 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
     const isAtBottom = distance < 40;
     atBottomRef.current = isAtBottom;
     setShowJumpBottom(distance > 60);
+
+    if (userTurns.length > 0) {
+      if (isAtBottom) {
+        setActiveTurnId(userTurns[userTurns.length - 1].id);
+      } else {
+        const containerTop = el.getBoundingClientRect().top;
+        let currentActive = userTurns[0].id;
+        for (const turn of userTurns) {
+          const msgEl = document.getElementById(`acp-msg-${turn.id}`);
+          if (msgEl) {
+            const rect = msgEl.getBoundingClientRect();
+            if (rect.top - containerTop <= 160) {
+              currentActive = turn.id;
+            }
+          }
+        }
+        setActiveTurnId(currentActive);
+      }
+    }
+  }, [userTurns]);
+
+  const handleJumpToTurn = useCallback((turnId: string) => {
+    setActiveTurnId(turnId);
+    const msgEl = document.getElementById(`acp-msg-${turnId}`);
+    if (msgEl) {
+      msgEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }, []);
 
   // 平滑跳到底部（「到底部」按钮用）
@@ -1369,6 +1418,7 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
           ) : (
           <React.Fragment key={block.msg.id}>
           <div
+            id={`acp-msg-${block.msg.id}`}
             className="flex flex-col max-w-[88%] mr-auto items-start"
           >
             {(() => { const msg = block.msg; return (<>
@@ -1672,24 +1722,93 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
         <div ref={messagesEndRef} className="h-10 shrink-0 pointer-events-none" />
       </div>
 
-      {/* 跳到底部悬浮按钮 */}
+      {/* 跳到底部悬浮按钮（放右边，纯图标提示，无文字） */}
       {showJumpBottom && (
         <button
           type="button"
           onClick={jumpToBottom}
           title="跳到对话最底部 (Scroll to bottom)"
           aria-label="跳到对话最底部"
-          className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer select-none text-[12px] font-medium group"
+          className="absolute bottom-3.5 right-4 z-20 flex items-center justify-center w-8 h-8 rounded-full border shadow-lg backdrop-blur-md transition-all duration-150 hover:scale-110 active:scale-95 cursor-pointer select-none group"
           style={{
             backgroundColor: 'var(--aura-card-bg, #252526)',
             borderColor: 'var(--aura-border, #454545)',
             color: 'var(--aura-text, #e0e0e0)',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)',
           }}
         >
-          <ChevronDown size={14} strokeWidth={2.4} className="text-[var(--aura-accent,#007acc)] group-hover:translate-y-0.5 transition-transform" />
-          <span>回到底部</span>
+          <ChevronDown size={16} strokeWidth={2.4} className="text-[var(--aura-accent,#007acc)] group-hover:translate-y-0.5 transition-transform" />
         </button>
+      )}
+
+      {/* 右侧会话记录大纲导航：始终垂直居中在右侧，未 hover 显示灰色短横线列，hover 展开提问摘要卡片，去除滚动条 */}
+      {userTurns.length > 0 && (
+        <div
+          onMouseEnter={() => setIsOutlineHovered(true)}
+          onMouseLeave={() => setIsOutlineHovered(false)}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto flex items-center"
+        >
+          {!isOutlineHovered ? (
+            /* 鼠标未 hover 时：一列小短横线，支持滚轮滚动且隐藏滚动条 */
+            <div className="flex flex-col items-end gap-2.5 py-1.5 px-1 cursor-pointer select-none max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {userTurns.map((turn) => {
+                const isActive = activeTurnId === turn.id;
+                return (
+                  <div
+                    key={turn.id}
+                    onClick={() => handleJumpToTurn(turn.id)}
+                    title={turn.fullText}
+                    className="flex items-center justify-end h-3"
+                  >
+                    <span
+                      className={`rounded-full transition-all duration-200 ${
+                        isActive
+                          ? 'w-4 h-[2.5px] bg-[#3b82f6] shadow-sm'
+                          : 'w-3 h-[2px] bg-[#888888]/40 hover:bg-[#aaaaaa] hover:w-3.5'
+                      }`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* 鼠标 hover 时：直接显示浮动卡片，无缩放过渡动画 */
+            <div
+              className="w-64 max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-2xl border shadow-2xl p-2.5 flex flex-col gap-0.5 select-none font-sans backdrop-blur-md"
+              style={{
+                backgroundColor: 'var(--aura-card-bg, #252526)',
+                borderColor: 'var(--aura-border, #454545)',
+                boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45)',
+              }}
+            >
+              {userTurns.map((turn) => {
+                const isActive = activeTurnId === turn.id;
+                return (
+                  <div
+                    key={turn.id}
+                    onClick={() => handleJumpToTurn(turn.id)}
+                    className={`flex items-center justify-between gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                      isActive
+                        ? 'text-[#3b82f6] font-medium bg-[#3b82f6]/15'
+                        : 'text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-text,#e0e0e0)] hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="truncate flex-1" title={turn.fullText}>
+                      {turn.summary}
+                    </span>
+                    <span
+                      className={`shrink-0 rounded-full transition-all duration-150 ${
+                        isActive
+                          ? 'w-4 h-[2.5px] bg-[#3b82f6]'
+                          : 'w-3 h-[2px] bg-[#888888]/50'
+                      }`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
       </div>
 

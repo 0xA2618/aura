@@ -41,6 +41,15 @@ html, body, #root {
   background: #4f4f4f;
 }
 
+/* 隐藏原生滚动条但保留鼠标滚轮滚动功能 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 .file-tree-row:not(.is-selected):hover,
 .plugin-row:hover {
   background-color: rgba(0, 122, 204, 0.14) !important;
@@ -258,21 +267,24 @@ html, body, #root {
   transform: scale(0.98);
 }
 
-/* ACP 消息区滚动条：加宽 + 常显，方便拖动 */
+/* 隐藏 3 号窗口终端视口（xterm）与 ACP 对话消息区的原生滚动条，保持界面极简纯净且完全保留滚轮滚动能力 */
+.xterm-viewport::-webkit-scrollbar,
+.xterm .xterm-viewport::-webkit-scrollbar,
+.terminal ::-webkit-scrollbar,
+.xterm ::-webkit-scrollbar,
+div[id^="terminal-"] ::-webkit-scrollbar,
 .acp-messages-scroll::-webkit-scrollbar {
-  width: 12px;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
-.acp-messages-scroll::-webkit-scrollbar-thumb {
-  background: #525252;
-  border: 3px solid transparent;
-  background-clip: content-box;
-  border-radius: 8px;
-}
-.acp-messages-scroll::-webkit-scrollbar-thumb:hover {
-  background: #6b6b6b;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-.acp-messages-scroll::-webkit-scrollbar-track {
-  background: transparent;
+
+.xterm-viewport,
+.xterm .xterm-viewport,
+.terminal,
+.xterm,
+div[id^="terminal-"],
+.acp-messages-scroll {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
