@@ -1,6 +1,6 @@
 {
   "name": "aura",
-  "version": "1.2.10",
+  "version": "1.2.11",
   "description": "Aura IDE - Minimalist macOS Desktop Code Workspace powered by Rust & Monaco",
   "scripts": {
     "dev": "vite",

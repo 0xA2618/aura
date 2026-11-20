@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
-import { Copy, ClipboardPaste } from 'lucide-react';
+import { Copy, ClipboardPaste, ChevronDown } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import {
   isTauri,
@@ -42,6 +42,17 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermInstance = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+    const handleScrollToBottom = useCallback((e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (xtermInstance.current) {
+        xtermInstance.current.scrollToBottom();
+        setShowScrollBottom(false);
+        xtermInstance.current.focus();
+      }
+    }, []);
 
     const safeFit = useCallback(() => {
       if (!fitAddonRef.current || !terminalRef.current) return;
@@ -155,6 +166,21 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
 
     xtermInstance.current = term;
     fitAddonRef.current = fitAddon;
+
+    const checkScrollBottom = () => {
+      if (!term || !term.buffer || !term.buffer.active) return;
+      const buf = term.buffer.active;
+      const atBottom = buf.viewportY >= buf.baseY;
+      setShowScrollBottom(!atBottom);
+    };
+
+    const scrollDisposer = term.onScroll(() => {
+      checkScrollBottom();
+    });
+
+    const writeParsedDisposer = term.onWriteParsed(() => {
+      checkScrollBottom();
+    });
 
     const termEl = terminalRef.current;
 
@@ -274,6 +300,8 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
         isSubscribed = false;
         clearTimeout(focusTimer);
         window.removeEventListener('resize', handleResize);
+        scrollDisposer.dispose();
+        writeParsedDisposer.dispose();
         if (termEl) {
           termEl.removeEventListener('dragenter', handleNativeDragOver, true);
           termEl.removeEventListener('dragover', handleNativeDragOver, true);
@@ -541,6 +569,25 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
               </div>
             </div>
           </div>
+        )}
+
+        {showScrollBottom && (
+          <button
+            type="button"
+            onClick={handleScrollToBottom}
+            title="跳到终端最底部 (Scroll to bottom)"
+            aria-label="跳到终端最底部"
+            className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer select-none text-[12px] font-medium group pointer-events-auto"
+            style={{
+              backgroundColor: 'var(--aura-card-bg, #252526)',
+              borderColor: 'var(--aura-border, #454545)',
+              color: 'var(--aura-text, #e0e0e0)',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.45)',
+            }}
+          >
+            <ChevronDown size={14} strokeWidth={2.4} className="text-[var(--aura-accent,#007acc)] group-hover:translate-y-0.5 transition-transform" />
+            <span>回到底部</span>
+          </button>
         )}
       </div>
     );
