@@ -328,9 +328,45 @@ export async function fetchFileContent(filePath: string): Promise<string> {
   return '';
 }
 
-export async function fetchConversationPrompts(sessionId: string): Promise<{ id: string; summary: string; fullText: string }[]> {
+export async function resolveAgySessionId(cwd?: string): Promise<string | null> {
   try {
-    const agyPath = `/Users/Yang/.gemini/antigravity-cli/brain/${sessionId}/.system_generated/logs/transcript.jsonl`;
+    const lastJsonPath = '/Users/Yang/.gemini/antigravity-cli/cache/last_conversations.json';
+    const content = await fetchFileContent(lastJsonPath);
+    if (content) {
+      const map = JSON.parse(content);
+      if (cwd && map[cwd]) {
+        return map[cwd];
+      }
+      if (cwd) {
+        for (const [k, v] of Object.entries(map)) {
+          if (cwd.startsWith(k) || k.startsWith(cwd)) {
+            return v as string;
+          }
+        }
+      }
+      const values = Object.values(map);
+      if (values.length > 0) {
+        return values[values.length - 1] as string;
+      }
+    }
+  } catch (e) {
+    console.error('[resolveAgySessionId error]', e);
+  }
+  return null;
+}
+
+export async function fetchConversationPrompts(sessionId?: string | null, cwd?: string): Promise<{ id: string; summary: string; fullText: string }[]> {
+  try {
+    let resolvedId = sessionId;
+    if (!resolvedId || !/^[0-9a-f-]{36}$/i.test(resolvedId)) {
+      const detected = await resolveAgySessionId(cwd);
+      if (detected) {
+        resolvedId = detected;
+      }
+    }
+    if (!resolvedId) return [];
+
+    const agyPath = `/Users/Yang/.gemini/antigravity-cli/brain/${resolvedId}/.system_generated/logs/transcript.jsonl`;
     const content = await fetchFileContent(agyPath);
     if (content) {
       const lines = content.split('\n');

@@ -62,18 +62,49 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       return null;
     }, [id, mode]);
 
+    // 是否为 agy/AI 对话会话
+    const isAgySession = useMemo(() => {
+      const m = (mode || '').toLowerCase();
+      const i = (id || '').toLowerCase();
+      return !!sessionId || m.includes('agy') || m.includes('antigravity') || i.includes('antigravity') || i.includes('agent-');
+    }, [id, mode, sessionId]);
+
+    // 外面最多只显示最新的 10 条杠
+    const displayedTurns = useMemo(() => {
+      if (userTurns.length <= 10) return userTurns;
+      return userTurns.slice(-10);
+    }, [userTurns]);
+
+    // 实时同步会话提问记录：每发一次就在最下面追加一条，新会话或第一条发出就立刻提示展示
+    const refreshPrompts = useCallback(async () => {
+      if (!isAgySession) return;
+      try {
+        const turns = await fetchConversationPrompts(sessionId, cwd);
+        if (turns && turns.length > 0) {
+          setUserTurns((prev) => {
+            if (prev.length !== turns.length || prev[prev.length - 1]?.id !== turns[turns.length - 1]?.id) {
+              setActiveTurnId(turns[turns.length - 1].id);
+              return turns;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        // ignore
+      }
+    }, [sessionId, isAgySession, cwd]);
+
     useEffect(() => {
-      if (!sessionId) {
+      if (!isAgySession) {
         setUserTurns([]);
         return;
       }
-      fetchConversationPrompts(sessionId).then((turns) => {
-        setUserTurns(turns);
-        if (turns.length > 0) {
-          setActiveTurnId(turns[turns.length - 1].id);
-        }
-      });
-    }, [sessionId]);
+      refreshPrompts();
+
+      // 自动轮询：每 1200ms 检测一次新写入的提问，确保每发一次立刻在最下面添加一条
+      const timer = setInterval(refreshPrompts, 1200);
+      return () => clearInterval(timer);
+    }, [isAgySession, refreshPrompts]);
 
     const handleJumpToTurn = useCallback((turn: { id: string; summary: string; fullText: string }) => {
       setActiveTurnId(turn.id);
@@ -330,6 +361,11 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
 
           term.onData((data) => {
             writeTerminalPTY(id, data);
+            if (data.includes('\r') || data.includes('\n')) {
+              setTimeout(refreshPrompts, 350);
+              setTimeout(refreshPrompts, 1200);
+              setTimeout(refreshPrompts, 2500);
+            }
           });
 
           term.onResize(({ cols, rows }) => {
@@ -664,75 +700,92 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
           </button>
         )}
 
-        {/* 右侧会话记录大纲导航：始终垂直居中在右侧，未 hover 显示灰色短横线列，hover 展开提问摘要卡片，去除滚动条 */}
-        {userTurns.length > 0 && (
+        {/* 右侧会话记录大纲导航：始终垂直居中在右侧，外面只显示10条杠，超过10条对话hover时出现滚动条 */}
+        {isAgySession && (
           <div
             onMouseEnter={() => setIsOutlineHovered(true)}
             onMouseLeave={() => setIsOutlineHovered(false)}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 z-30 pointer-events-auto flex items-center"
           >
             {!isOutlineHovered ? (
-              /* 图 1：鼠标未 hover 时只展示一列小短横线，支持滚轮滚动且隐藏滚动条 */
-              <div className="flex flex-col items-end gap-2.5 py-1.5 px-1 cursor-pointer select-none max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {userTurns.map((turn) => {
-                  const isActive = activeTurnId === turn.id;
-                  return (
-                    <div
-                      key={turn.id}
-                      onClick={() => handleJumpToTurn(turn)}
-                      title={turn.fullText}
-                      className="flex items-center justify-end h-3"
-                    >
-                      <span
-                        className={`rounded-full transition-all duration-200 ${
-                          isActive
-                            ? 'w-4 h-[2.5px] bg-[#3b82f6] shadow-sm'
-                            : 'w-3 h-[2px] bg-[#888888]/50 hover:bg-[#aaaaaa] hover:w-3.5'
-                        }`}
-                      />
-                    </div>
-                  );
-                })}
+              /* 图 1：鼠标未 hover 时外面展示小短横线（若刚开新对话则显示 1 条就绪中杠，有历史则显示最新的 10 条杠） */
+              <div className="flex flex-col items-end gap-2.5 py-1.5 px-1 cursor-pointer select-none">
+                {userTurns.length === 0 ? (
+                  <div className="flex items-center justify-end h-3" title="新对话 (就绪)">
+                    <span className="w-4 h-[2.5px] bg-[#3b82f6] shadow-sm rounded-full" />
+                  </div>
+                ) : (
+                  displayedTurns.map((turn) => {
+                    const isActive = activeTurnId === turn.id;
+                    return (
+                      <div
+                        key={turn.id}
+                        onClick={() => handleJumpToTurn(turn)}
+                        title={turn.fullText}
+                        className="flex items-center justify-end h-3"
+                      >
+                        <span
+                          className={`rounded-full transition-all duration-200 ${
+                            isActive
+                              ? 'w-4 h-[2.5px] bg-[#3b82f6] shadow-sm'
+                              : 'w-3 h-[2px] bg-[#888888]/50 hover:bg-[#aaaaaa] hover:w-3.5'
+                          }`}
+                        />
+                      </div>
+                    );
+                  })
+                )}
               </div>
             ) : (
-              /* 图 2：鼠标 hover 时直接显示圆角阴影卡片，无缩放过渡动画 */
+              /* 图 2：鼠标 hover 时直接显示圆角阴影卡片，超过 10 条对话出现滚动条，<=10 条无滚动条 */
               <div
-                className="w-64 max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-2xl border shadow-2xl p-2.5 flex flex-col gap-0.5 select-none font-sans backdrop-blur-md"
+                className={`w-64 select-none font-sans rounded-2xl border shadow-2xl p-2.5 flex flex-col gap-0.5 backdrop-blur-md ${
+                  userTurns.length > 10
+                    ? 'max-h-[350px] overflow-y-auto outline-card-scroll pr-1'
+                    : 'overflow-hidden'
+                }`}
                 style={{
                   backgroundColor: 'var(--aura-card-bg, #252526)',
                   borderColor: 'var(--aura-border, #454545)',
                   boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45)',
                 }}
               >
-                {userTurns.map((turn) => {
-                  const isActive = activeTurnId === turn.id;
-                  return (
-                    <div
-                      key={turn.id}
-                      onClick={() => handleJumpToTurn(turn)}
-                      className={`flex items-center justify-between gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                        isActive
-                          ? 'text-[#3b82f6] font-medium bg-[#3b82f6]/15'
-                          : 'text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-text,#e0e0e0)] hover:bg-white/5'
-                      }`}
-                    >
-                      <span className="truncate flex-1" title={turn.fullText}>
-                        {turn.summary}
-                      </span>
-                      <span
-                        className={`shrink-0 rounded-full transition-all duration-150 ${
+                {userTurns.length === 0 ? (
+                  <div className="flex items-center justify-between gap-2.5 px-2.5 py-1.5 rounded-lg text-xs text-[#3b82f6] font-medium bg-[#3b82f6]/15">
+                    <span className="truncate flex-1">新对话 (就绪)</span>
+                    <span className="shrink-0 w-4 h-[2.5px] bg-[#3b82f6] rounded-full" />
+                  </div>
+                ) : (
+                  userTurns.map((turn) => {
+                    const isActive = activeTurnId === turn.id;
+                    return (
+                      <div
+                        key={turn.id}
+                        onClick={() => handleJumpToTurn(turn)}
+                        className={`flex items-center justify-between gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
                           isActive
-                            ? 'w-4 h-[2.5px] bg-[#3b82f6]'
+                            ? 'text-[#3b82f6] font-medium bg-[#3b82f6]/15'
+                            : 'text-[var(--aura-text-muted,#858585)] hover:text-[var(--aura-text,#e0e0e0)] hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="truncate flex-1" title={turn.fullText}>
+                          {turn.summary}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-full transition-all duration-150 ${
+                            isActive
+                              ? 'w-4 h-[2.5px] bg-[#3b82f6]'
                             : 'w-3 h-[2px] bg-[#888888]/50'
                         }`}
                       />
                     </div>
                   );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )}
       </div>
     );
   },

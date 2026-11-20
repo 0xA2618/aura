@@ -267,12 +267,11 @@ html, body, #root {
   transform: scale(0.98);
 }
 
-/* 隐藏 3 号窗口终端视口（xterm）与 ACP 对话消息区的原生滚动条，保持界面极简纯净且完全保留滚轮滚动能力 */
+/* 隐藏 3 号窗口终端视口（xterm）与 ACP 对话消息区的原生粗滚动条，保持界面极简纯净且完全保留滚轮滚动能力 */
 .xterm-viewport::-webkit-scrollbar,
 .xterm .xterm-viewport::-webkit-scrollbar,
 .terminal ::-webkit-scrollbar,
 .xterm ::-webkit-scrollbar,
-div[id^="terminal-"] ::-webkit-scrollbar,
 .acp-messages-scroll::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
@@ -283,8 +282,30 @@ div[id^="terminal-"] ::-webkit-scrollbar,
 .xterm .xterm-viewport,
 .terminal,
 .xterm,
-div[id^="terminal-"],
 .acp-messages-scroll {
   -ms-overflow-style: none !important;
   scrollbar-width: none !important;
+}
+
+/* 对话大纲导航浮动卡片滚动条：严格与当前主题背景和边框保持一致，绝无刺眼白条 */
+.outline-card-scroll {
+  color-scheme: dark;
+}
+.outline-card-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 5px !important;
+  height: 5px !important;
+}
+.outline-card-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.outline-card-scroll::-webkit-scrollbar-thumb {
+  background: var(--aura-border, #454545) !important;
+  border-radius: 4px !important;
+}
+.outline-card-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--aura-text-muted, #666666) !important;
+}
+.outline-card-scroll::-webkit-scrollbar-corner {
+  background: transparent !important;
 }

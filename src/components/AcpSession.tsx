@@ -378,6 +378,12 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
       });
   }, [messages]);
 
+  // 外面最多只显示最新的 10 条杠
+  const displayedTurns = useMemo(() => {
+    if (userTurns.length <= 10) return userTurns;
+    return userTurns.slice(-10);
+  }, [userTurns]);
+
   useEffect(() => {
     if (userTurns.length > 0) {
       setActiveTurnId((prev) => prev || userTurns[userTurns.length - 1].id);
@@ -1741,17 +1747,21 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
         </button>
       )}
 
-      {/* 右侧会话记录大纲导航：始终垂直居中在右侧，未 hover 显示灰色短横线列，hover 展开提问摘要卡片，去除滚动条 */}
-      {userTurns.length > 0 && (
-        <div
-          onMouseEnter={() => setIsOutlineHovered(true)}
-          onMouseLeave={() => setIsOutlineHovered(false)}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto flex items-center"
-        >
-          {!isOutlineHovered ? (
-            /* 鼠标未 hover 时：一列小短横线，支持滚轮滚动且隐藏滚动条 */
-            <div className="flex flex-col items-end gap-2.5 py-1.5 px-1 cursor-pointer select-none max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              {userTurns.map((turn) => {
+      {/* 右侧会话记录大纲导航：始终垂直居中在右侧，外面只显示10条杠，超过10条对话hover时出现滚动条 */}
+      <div
+        onMouseEnter={() => setIsOutlineHovered(true)}
+        onMouseLeave={() => setIsOutlineHovered(false)}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 pointer-events-auto flex items-center"
+      >
+        {!isOutlineHovered ? (
+          /* 鼠标未 hover 时：外面展示小短横线（若刚开新对话则展示 1 条就绪中杠，有历史则展示最新的 10 条杠） */
+          <div className="flex flex-col items-end gap-2.5 py-1.5 px-1 cursor-pointer select-none">
+            {userTurns.length === 0 ? (
+              <div className="flex items-center justify-end h-3" title="新对话 (就绪)">
+                <span className="w-4 h-[2.5px] bg-[#3b82f6] shadow-sm rounded-full" />
+              </div>
+            ) : (
+              displayedTurns.map((turn) => {
                 const isActive = activeTurnId === turn.id;
                 return (
                   <div
@@ -1769,19 +1779,30 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
                     />
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            /* 鼠标 hover 时：直接显示浮动卡片，无缩放过渡动画 */
-            <div
-              className="w-64 max-h-[70vh] overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden rounded-2xl border shadow-2xl p-2.5 flex flex-col gap-0.5 select-none font-sans backdrop-blur-md"
-              style={{
-                backgroundColor: 'var(--aura-card-bg, #252526)',
-                borderColor: 'var(--aura-border, #454545)',
-                boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45)',
-              }}
-            >
-              {userTurns.map((turn) => {
+              })
+            )}
+          </div>
+        ) : (
+          /* 鼠标 hover 时：直接显示浮动卡片，超过 10 条对话出现滚动条，<=10 条无滚动条 */
+          <div
+            className={`w-64 select-none font-sans rounded-2xl border shadow-2xl p-2.5 flex flex-col gap-0.5 backdrop-blur-md ${
+              userTurns.length > 10
+                ? 'max-h-[350px] overflow-y-auto outline-card-scroll pr-1'
+                : 'overflow-hidden'
+            }`}
+            style={{
+              backgroundColor: 'var(--aura-card-bg, #252526)',
+              borderColor: 'var(--aura-border, #454545)',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45)',
+            }}
+          >
+            {userTurns.length === 0 ? (
+              <div className="flex items-center justify-between gap-2.5 px-2.5 py-1.5 rounded-lg text-xs text-[#3b82f6] font-medium bg-[#3b82f6]/15">
+                <span className="truncate flex-1">新对话 (就绪)</span>
+                <span className="shrink-0 w-4 h-[2.5px] bg-[#3b82f6] rounded-full" />
+              </div>
+            ) : (
+              userTurns.map((turn) => {
                 const isActive = activeTurnId === turn.id;
                 return (
                   <div
@@ -1805,11 +1826,11 @@ export const AcpSession: React.FC<AcpSessionProps> = ({
                     />
                   </div>
                 );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+              })
+            )}
+          </div>
+        )}
+      </div>
       </div>
 
       {/* Input — 与 agy 终端一致的两行分隔线布局 */}
