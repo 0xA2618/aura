@@ -144,6 +144,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Single source of truth for the directory tree (nested children embedded in the same state)
   const [treeFiles, setTreeFiles] = useState<FileItem[]>([]);
+  // 窗口内独立切换：点击 Sessions 项目只加载本窗口的文件树，不触发 App 全局 workspaceDir 切换（其他窗口不受影响）
+  const [sidebarProjectDir, setSidebarProjectDir] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -368,9 +370,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleProjectClick = (group: { projectPath: string; projectName: string; isCurrent: boolean }) => {
-    // Phase: 点击项目即切换 workspace 的文件目录（把下面的文件目录加载过来）
-    if (onSelectProject && group.projectPath) {
-      onSelectProject(group.projectPath);
+    // 点击项目：在当前窗口加载对应项目的文件树（不切换全局工作区，其他窗口不受影响）
+    if (group.projectPath) {
+      setSidebarProjectDir(group.projectPath);
+      void (async () => {
+        try {
+          const items = await fetchDirectory(group.projectPath);
+          setTreeFiles((prev) => carryChildren(prev, items || []));
+        } catch (e) {
+          console.error('load project dir failed', e);
+        }
+      })();
     }
     toggleProjectCollapse(group.projectPath);
   };
@@ -581,8 +591,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Refetch the root listing plus ALL currently-open folders in parallel, then merge into one consistent tree
   const refreshTree = useCallback(async () => {
+    const dir = sidebarProjectDir || workspaceDir;
     const [rootItems, openList] = await Promise.all([
-      fetchDirectory(workspaceDir),
+      fetchDirectory(dir),
       Promise.resolve(
         Object.entries(openFoldersRef.current)
           .filter(([, open]) => open)
@@ -599,7 +610,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
       return merged;
     });
-  }, [workspaceDir, carryChildren, setChildrenInTree]);
+  }, [workspaceDir, sidebarProjectDir, carryChildren, setChildrenInTree]);
 
   // Refetch a single folder (used when expanding one already-loaded directory)
   const reloadFolder = useCallback(async (folderPath: string) => {
@@ -612,12 +623,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setTreeFiles([]);
     setSelectedItem(null);
     setSelectedPaths(new Set());
+    setSidebarProjectDir(null);
   }, [workspaceDir]);
 
   useEffect(() => {
+    // 窗口内已选择项目时，树由项目点击加载，跳过 App 全局 files 同步（避免覆盖窗口内选择）
+    if (sidebarProjectDir) return;
     // Reconcile root listing from prop into the unified tree; preserve children of still-open folders
     setTreeFiles((prev) => carryChildren(prev, files || []));
-  }, [files, carryChildren]);
+  }, [files, sidebarProjectDir, carryChildren]);
 
   useEffect(() => {
     const handleCloseSettingsMenu = () => {
