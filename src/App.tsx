@@ -1694,7 +1694,6 @@ export function App() {
       localStorage.setItem('aura:workspaceDir', newProjectDir);
       loadWorkspace(newProjectDir);
       // NOTE: Do not touch bottom tabs! Keep original sessions and terminal tabs open as requested.
-      showToast(`已切换目录: ${newProjectDir.split('/').filter(Boolean).pop()}`);
     }
   }, []);
 

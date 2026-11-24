@@ -368,6 +368,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleProjectClick = (group: { projectPath: string; projectName: string; isCurrent: boolean }) => {
+    // Phase: 点击项目即切换 workspace 的文件目录（把下面的文件目录加载过来）
+    if (onSelectProject && group.projectPath) {
+      onSelectProject(group.projectPath);
+    }
     toggleProjectCollapse(group.projectPath);
   };
 
