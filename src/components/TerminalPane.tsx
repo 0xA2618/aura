@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Copy, ClipboardPaste, ChevronDown } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import {
@@ -167,6 +168,32 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
 
       const isLight = isLightBg(dockBg);
 
+      const openExternalUrl = (uri: string) => {
+        if (isTauri) {
+          openUrl(uri).catch((err) => {
+            console.warn('[TerminalPane] openUrl failed, falling back to window.open', err);
+            window.open(uri, '_blank', 'noopener,noreferrer');
+          });
+          return;
+        }
+        window.open(uri, '_blank', 'noopener,noreferrer');
+      };
+
+      const openLocalFilePath = (rawPath: string) => {
+        let filePath = rawPath;
+        if (filePath.startsWith('file://')) {
+          try {
+            filePath = decodeURIComponent(new URL(filePath).pathname);
+          } catch {
+            filePath = filePath.replace(/^file:\/\//, '');
+          }
+        }
+        // 剥离末尾的 :line 或 :line:col（#L... 由 App.tsx 处理）
+        filePath = filePath.replace(/:\d+(?::\d+)?$/, '');
+        if (!filePath) return;
+        window.dispatchEvent(new CustomEvent('aura:open-file-path', { detail: filePath }));
+      };
+
       const term = new Terminal({
         allowProposedApi: true,
         cursorBlink: true,
@@ -176,6 +203,19 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
         fontFamily: getEffectiveTerminalFont(fontFamily),
         lineHeight: 1.18,
         letterSpacing: 0,
+        linkHandler: {
+          allowNonHttpProtocols: true,
+          activate: (event: MouseEvent, uri: string) => {
+            // 仅在按住 Cmd（且未按 Ctrl）时打开，保持普通点击与 Ctrl+左击原生行为
+            if (!event.metaKey || event.ctrlKey) return;
+            event.preventDefault();
+            if (/^(https?|mailto):/i.test(uri)) {
+              openExternalUrl(uri);
+            } else if (uri.startsWith('file://') || uri.startsWith('/')) {
+              openLocalFilePath(uri);
+            }
+          },
+        },
         theme: {
           background: dockBg,
           foreground: dockFg,
@@ -203,10 +243,91 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
       });
 
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
+    const webLinksAddon = new WebLinksAddon((event: MouseEvent, uri: string) => {
+      // 仅在按住 Cmd（且未按 Ctrl）时打开，保持普通点击与 Ctrl+左击原生行为
+      if (!event.metaKey || event.ctrlKey) return;
+      event.preventDefault();
+      openExternalUrl(uri);
+    });
 
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
+
+    // 识别终端输出中的本地绝对路径 / file:// 链接，Cmd+左击在 2 号窗口（代码编辑器）中打开
+    const localPathLinkDisposer = term.registerLinkProvider({
+      provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
+        const line = term.buffer.active.getLine(bufferLineNumber - 1);
+        if (!line) {
+          callback(undefined);
+          return;
+        }
+
+        let lineText = '';
+        const colMap: number[] = [];
+        for (let col = 0; col < line.length; col++) {
+          const cell = line.getCell(col);
+          if (!cell) continue;
+          const width = cell.getWidth();
+          if (width === 0) continue;
+          const chars = cell.getChars() || ' ';
+          for (let i = 0; i < chars.length; i++) {
+            colMap.push(col + 1);
+          }
+          lineText += chars;
+        }
+
+        if (!lineText.trim()) {
+          callback(undefined);
+          return;
+        }
+
+        // 先记录 http/https URL 范围，避免把 URL 里的路径部分误识别为本地路径
+        const urlRanges: Array<[number, number]> = [];
+        const urlRegex = /https?:\/\/[^\s"'`<>()[\]{}]+/gi;
+        let urlMatch: RegExpExecArray | null;
+        while ((urlMatch = urlRegex.exec(lineText)) !== null) {
+          urlRanges.push([urlMatch.index, urlMatch.index + urlMatch[0].length]);
+        }
+
+        const links: ILink[] = [];
+        const pathRegex = /(?:^|[\s"'`(\[{<=,;：:（）【】「」])((?:file:\/\/\/[^\s"'`<>()[\]{}]+|\/[A-Za-z0-9._~@+\-]+(?:\/[^\s"'`<>()[\]{}]+)+))/g;
+        let match: RegExpExecArray | null;
+        while ((match = pathRegex.exec(lineText)) !== null) {
+          const rawMatch = match[1];
+          const startIdx = match.index + match[0].length - rawMatch.length;
+          // 剥离末尾常见标点（保留 :行号 / :行号:列号）
+          const cleaned = rawMatch.replace(/[.,;!?]+$/, '');
+          if (!cleaned) continue;
+          const endIdx = startIdx + cleaned.length;
+
+          const overlapsUrl = urlRanges.some(([uStart, uEnd]) => startIdx >= uStart && startIdx < uEnd);
+          if (overlapsUrl) continue;
+
+          const startX = colMap[startIdx];
+          const endX = colMap[endIdx - 1];
+          if (!startX || !endX) continue;
+
+          links.push({
+            range: {
+              start: { x: startX, y: bufferLineNumber },
+              end: { x: endX, y: bufferLineNumber },
+            },
+            text: cleaned,
+            decorations: {
+              pointerCursor: true,
+              underline: true,
+            },
+            activate(event: MouseEvent, text: string) {
+              if (!event.metaKey || event.ctrlKey) return;
+              event.preventDefault();
+              openLocalFilePath(text);
+            },
+          });
+        }
+
+        callback(links.length > 0 ? links : undefined);
+      },
+    });
 
     try {
       const unicode11Addon = new Unicode11Addon();
@@ -423,6 +544,7 @@ export const TerminalPane = React.memo<TerminalPaneProps>(
           resizeObserver.disconnect();
         }
         cleanupListeners.forEach(fn => fn());
+        localPathLinkDisposer.dispose();
         killTerminalPTY(id);
         term.dispose();
       };
